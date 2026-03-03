@@ -1,0 +1,9 @@
+# Generated HTML output (not the template)
+output/*.html
+
+# Template is tracked
+!skills/architect/templates/base.html
+
+node_modules/
+.DS_Store
+Thumbs.db

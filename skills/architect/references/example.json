@@ -1,0 +1,684 @@
+{
+  "version": "2.0",
+  "project": {
+    "name": "Ticket Reservation System",
+    "description": "Event-Ticketing-Plattform mit Sitzplatzreservierung, Bezahlung und Benachrichtigung. Unterstützt 20k TPS bei Overselling=0 Garantie.",
+    "author": "Sebastian",
+    "date": "2025-03-02"
+  },
+
+  "nfrs": [
+    {
+      "id": "nfr-perf-1",
+      "category": "Performance",
+      "title": "Peak Load",
+      "metric": "20k TPS weltweit",
+      "approach": "Horizontal Scaling (Stateless Services)",
+      "details": [
+        "Caching: Event-Daten (CDN), Sitzpläne (Redis)",
+        "DB: Read Replicas für Event-Suche"
+      ]
+    },
+    {
+      "id": "nfr-avail-1",
+      "category": "Availability",
+      "title": "Verfügbarkeit",
+      "metric": "99.9% Uptime (< 8.76h Downtime/Jahr)",
+      "approach": "Redundante Services, Health Checks, Circuit Breaker"
+    },
+    {
+      "id": "nfr-lat-1",
+      "category": "Latency",
+      "title": "Latency (E2E)",
+      "metric": "< 5s (p95) End-to-End, Reservierung < 300ms",
+      "approach": "Zielpfad Payment bestätigt < 3s, Reservierung < 300ms",
+      "details": ["Timeout-Release unabhängig davon"]
+    },
+    {
+      "id": "nfr-cons-1",
+      "category": "Consistency",
+      "title": "Overselling Prevention",
+      "metric": "Overselling = 0 (kein Sitz doppelt vergeben)",
+      "approach": "Exactly-once je PSP-Transaktion (idempotente Handler)",
+      "details": ["UNIQUE INDEX one_active_hold ON seats(event_id, seat_id) WHERE state='HELD'"]
+    },
+    {
+      "id": "nfr-sec-1",
+      "category": "Security",
+      "title": "Security & Compliance",
+      "metric": "PCI-DSS konform, GDPR konform",
+      "approach": "Webhook signature verify, replay-protection (nonce + ts)"
+    },
+    {
+      "id": "nfr-audit-1",
+      "category": "Auditability",
+      "title": "Audit Trail",
+      "metric": "Unveränderlicher Payment/Refund-Audit-Log, 7 Jahre Retention",
+      "approach": "Append-only Audit Log DB"
+    },
+    {
+      "id": "nfr-obs-1",
+      "category": "Observability",
+      "title": "Monitoring",
+      "metric": "Success-Rate > 99%, Callback-Lag < 2s, DLQ-Depth = 0",
+      "approach": "Metriken, Traces, strukturierte Logs"
+    }
+  ],
+
+  "designDecisions": [
+    {
+      "id": "dd-1",
+      "title": "Reservation Service generates order_id",
+      "context": "Order muss angelegt werden bevor Payment startet",
+      "decision": "Reservation Service erzeugt die order_id und gibt sie zurück",
+      "tradeoff": "Coupling zwischen Reservation und Order Service vs. niedrigere Latency (kein extra Hop)",
+      "alternatives": ["Checkout Orchestrator als separater Service"],
+      "qualityScenario": "Wenn ein Kunde einen Sitz reserviert, unter Peak-Load 20k TPS, dann erhält er innerhalb von < 300ms eine Bestätigung mit orderId, gemessen an p95 Latency.",
+      "relatedNfrs": ["nfr-lat-1"],
+      "relatedElements": ["cnt-reservation-svc", "cnt-order-svc"]
+    },
+    {
+      "id": "dd-2",
+      "title": "Outbox Pattern für Event Publishing",
+      "context": "DB-Update und Event-Publish müssen atomar sein",
+      "decision": "Outbox-Tabelle wird in derselben Transaktion geschrieben, Relay pollt und published",
+      "tradeoff": "Latency (Polling-Delay ~100ms) vs. Consistency (guaranteed delivery)",
+      "alternatives": ["Change Data Capture (CDC)", "Dual Write mit Kompensation"],
+      "qualityScenario": "Wenn der Kafka-Broker ausfällt, unter normaler Last, dann bleiben Events in der Outbox-DB und werden nach Recovery innerhalb von < 5s published, gemessen an Event-Delivery-Rate = 100%.",
+      "relatedNfrs": ["nfr-cons-1"],
+      "relatedElements": ["cnt-reservation-svc", "cnt-outbox-relay", "cnt-kafka"]
+    },
+    {
+      "id": "dd-3",
+      "title": "Idempotency via Idempotency-Key",
+      "context": "Doppelte Reservierungen bei Retries verhindern",
+      "decision": "Client sendet Idempotency-Key, Service prüft Duplikate: Return existing / Create new",
+      "tradeoff": "Zusätzlicher DB-Lookup pro Request vs. Korrektheit bei Retries",
+      "alternatives": ["Client-seitige Deduplication"],
+      "qualityScenario": "Wenn ein Client denselben Request doppelt sendet (Retry), unter Netzwerk-Instabilität, dann wird die Reservierung nur einmal ausgeführt und das Duplikat gibt die bestehende Reservierung zurück, gemessen an Duplicate-Processing-Rate = 0%.",
+      "relatedNfrs": ["nfr-cons-1"],
+      "relatedElements": ["cnt-reservation-svc"]
+    },
+    {
+      "id": "dd-4",
+      "title": "8-Minuten Hold mit Scheduler-Release",
+      "context": "Reservierte Sitze müssen nach Timeout freigegeben werden",
+      "decision": "8min Lock in Redis + Scheduler pollt abgelaufene Holds alle 10s",
+      "tradeoff": "Polling-Overhead (10s Granularität) vs. Einfachheit (kein verteilter Timer)",
+      "alternatives": ["Delayed Message Queue", "DB-based TTL"],
+      "qualityScenario": "Wenn ein Kunde nicht innerhalb von 8 Minuten bezahlt, unter normaler Last, dann wird der Sitz automatisch innerhalb von max. 10s nach Ablauf freigegeben, gemessen an Zombie-Hold-Rate = 0 nach 8min+10s.",
+      "relatedNfrs": ["nfr-perf-1", "nfr-cons-1"],
+      "relatedElements": ["cnt-redis", "cnt-scheduler-svc", "cnt-seats-db"]
+    },
+    {
+      "id": "dd-5",
+      "title": "Redundante Stateless Services",
+      "context": "System muss 99.9% verfügbar sein trotz einzelner Service-Ausfälle",
+      "decision": "Alle Core Services sind stateless und horizontal skalierbar, Health Checks + Auto-Restart",
+      "tradeoff": "Höhere Infrastrukturkosten vs. Ausfallsicherheit",
+      "alternatives": ["Single-Instance mit Hot-Standby"],
+      "qualityScenario": "Wenn eine Service-Instanz ausfällt, unter Peak-Load, dann übernehmen verbleibende Instanzen innerhalb von < 5s ohne Datenverlust, gemessen an Uptime > 99.9%.",
+      "relatedNfrs": ["nfr-avail-1"],
+      "relatedElements": ["cnt-reservation-svc", "cnt-order-svc", "cnt-event-svc"]
+    },
+    {
+      "id": "dd-6",
+      "title": "Strukturierte Observability Pipeline",
+      "context": "Incidents müssen schnell diagnostizierbar sein",
+      "decision": "Structured Logging + Distributed Tracing + Metriken-Dashboard mit Alerting",
+      "tradeoff": "Zusätzliche Infrastruktur (Tracing-Backend, Log-Aggregation) vs. MTTR-Reduktion",
+      "alternatives": ["Nur Application Logs ohne Tracing"],
+      "qualityScenario": "Wenn ein Request fehlschlägt, unter normaler Last, dann ist der vollständige Trace innerhalb von < 30s im Dashboard sichtbar und die Root Cause identifizierbar, gemessen an MTTR < 15min.",
+      "relatedNfrs": ["nfr-obs-1"],
+      "relatedElements": ["cnt-reservation-svc", "cnt-order-svc", "cnt-kafka"]
+    }
+  ],
+
+  "context": {
+    "elements": [
+      {
+        "id": "ctx-customer",
+        "type": "person",
+        "name": "Kunde",
+        "description": "Sucht Events, reserviert Sitzplätze, bezahlt Tickets",
+        "why": "Primärer Nutzer, dessen Kauferlebnis das System optimiert",
+        "position": { "zone": "top", "row": 0, "col": 0 }
+      },
+      {
+        "id": "ctx-admin",
+        "type": "person",
+        "name": "Admin",
+        "description": "Legt Events an, ruft Metriken und Traces ab",
+        "why": "Verantwortlich für Event-Management und System-Monitoring",
+        "position": { "zone": "top", "row": 0, "col": 2 }
+      },
+      {
+        "id": "ctx-system",
+        "type": "system",
+        "name": "Reservation System",
+        "description": "Kernplattform für Event-Ticketing mit Sitzplatzreservierung",
+        "drillDown": "container",
+        "position": { "zone": "center", "row": 1, "col": 1 }
+      },
+      {
+        "id": "ctx-auth",
+        "type": "external_system",
+        "name": "Auth Provider",
+        "description": "OIDC/JWT Authentifizierung",
+        "technology": "OIDC/JWT",
+        "why": "Externalisierte Auth reduziert Security-Verantwortung",
+        "position": { "zone": "top", "row": 0, "col": 1 }
+      },
+      {
+        "id": "ctx-psp",
+        "type": "external_system",
+        "name": "PSP PayPal",
+        "description": "Payment Service Provider für Bezahlvorgänge",
+        "technology": "PayPal API v2",
+        "why": "PCI-DSS Compliance durch externen PSP (kein Kartendaten-Handling)",
+        "position": { "zone": "bottom", "row": 2, "col": 2 }
+      },
+      {
+        "id": "ctx-notify",
+        "type": "external_system",
+        "name": "Notify System",
+        "description": "Ticketversand per Mail/SMS",
+        "technology": "SendGrid, Twilio",
+        "why": "Externalisierte Zustellung für Multi-Channel-Support",
+        "position": { "zone": "bottom", "row": 2, "col": 0 }
+      }
+    ],
+    "relationships": [
+      { "from": "ctx-customer", "to": "ctx-auth", "label": "OIDC/JWT Login", "async": false, "detail": "Kunde authentifiziert sich via OIDC-Flow, erhält JWT Token", "why": "Authentifizierung vor Zugriff auf geschützte Ressourcen" },
+      { "from": "ctx-auth", "to": "ctx-system", "label": "JWT Token validieren", "async": false, "detail": "Auth Provider validiert Token, System prüft Claims" },
+      { "from": "ctx-customer", "to": "ctx-system", "label": "Events suchen, Sitze reservieren", "async": false, "detail": "REST API Calls: GET /events, POST /reservations, DELETE /reservations/{id}", "why": "Kern-Interaktion des Kunden mit dem System" },
+      { "from": "ctx-system", "to": "ctx-psp", "label": "Bezahlung starten", "async": false, "detail": "POST /payments mit merchant_request_id (idempotent)", "why": "Bezahlvorgang extern an PCI-DSS-konformen PSP delegiert", "relatedDecision": "dd-3" },
+      { "from": "ctx-psp", "to": "ctx-system", "label": "Payment Webhook", "async": true, "detail": "PSP sendet Webhook bei Payment-Status-Änderung", "payload": "{ type: PaymentConfirmed, orderId, amount, status, signature }", "why": "Asynchrone Bestätigung weil PSP-Verarbeitung nicht in Echtzeit" },
+      { "from": "ctx-system", "to": "ctx-notify", "label": "Ticket versenden", "async": true, "detail": "Nach Payment-Bestätigung: Ticket-PDF generieren und per Mail/SMS senden", "payload": "{ type: TicketCreated, orderId, eventId, seatId, recipientEmail }", "why": "Entkoppelter Versand, damit Payment-Flow nicht blockiert" },
+      { "from": "ctx-admin", "to": "ctx-system", "label": "Events anlegen, Monitoring", "async": false, "detail": "Admin-API: POST /events, GET /metrics, GET /traces", "why": "Event-Management und operatives Monitoring" }
+    ]
+  },
+
+  "container": {
+    "elements": [
+      {
+        "id": "cnt-gateway",
+        "type": "gateway",
+        "name": "API Gateway",
+        "description": "Auth (JWT), Rate Limiting 20k TPS",
+        "technology": "nginx / Kong",
+        "why": "Zentraler Einstiegspunkt für Auth und Rate Limiting (NFR Performance)",
+        "relatedDecisions": ["dd-5"],
+        "position": { "zone": "top", "row": 0, "col": 1 }
+      },
+      {
+        "id": "cnt-event-svc",
+        "type": "service",
+        "name": "Event Service",
+        "description": "Read-Heavy: Event-Katalog und Suche",
+        "technology": "Node.js",
+        "tags": ["read-path"],
+        "why": "Separater Read-Path für horizontale Skalierung bei Lastspitzen",
+        "relatedDecisions": ["dd-5"],
+        "position": { "zone": "center", "row": 1, "col": 0 }
+      },
+      {
+        "id": "cnt-cdn",
+        "type": "cdn",
+        "name": "CDN",
+        "description": "Nur Metadaten und Bilder, nicht die verfügbaren Sitze",
+        "technology": "CloudFront",
+        "why": "Latenz-Reduktion für statische Event-Daten (NFR Performance)",
+        "position": { "zone": "center", "row": 1, "col": -1 }
+      },
+      {
+        "id": "cnt-reservation-svc",
+        "type": "service",
+        "name": "Reservation Service",
+        "description": "Write: Reservierungen erstellen, validieren, buchen",
+        "technology": "Node.js",
+        "drillDown": "component:cnt-reservation-svc",
+        "details": [
+          "Prüfe Idempotent Key",
+          "Transaction: UpdateDB, insert Outbox, insert AuditLog"
+        ],
+        "why": "Kern-Write-Path mit Consistency-Garantien (NFR Overselling=0)",
+        "pattern": "Unit-of-Work: DB + Outbox + Audit in einer Transaktion",
+        "codeSnippets": ["schema-seats", "sql-reserve", "sql-book", "sql-release"],
+        "relatedDecisions": ["dd-1", "dd-2", "dd-3"],
+        "position": { "zone": "center", "row": 1, "col": 1 }
+      },
+      {
+        "id": "cnt-order-svc",
+        "type": "service",
+        "name": "Order Service",
+        "description": "Verwaltet Orders, PSP-Integration, Webhook-Handling",
+        "technology": "Node.js",
+        "why": "Separater Bounded Context für Order-Lifecycle und Payment-Integration",
+        "relatedDecisions": ["dd-1"],
+        "position": { "zone": "center", "row": 1, "col": 2 }
+      },
+      {
+        "id": "cnt-kafka",
+        "type": "message_broker",
+        "name": "Message Broker",
+        "description": "Event-Streaming: SeatReserved, PaymentConfirmed, ReservationExpired",
+        "technology": "Kafka",
+        "why": "Entkopplung zwischen Services, guaranteed delivery mit Outbox Pattern",
+        "relatedDecisions": ["dd-2"],
+        "position": { "zone": "center", "row": 2, "col": 1.5 }
+      },
+      {
+        "id": "cnt-notification-svc",
+        "type": "service",
+        "name": "Notification Service",
+        "description": "Ticket erstellen (orderId, eventId, seatId, qrCode)",
+        "technology": "Node.js",
+        "why": "Entkoppelter Versand, damit Payment-Flow nicht blockiert",
+        "position": { "zone": "center", "row": 2, "col": 2.5 }
+      },
+      {
+        "id": "cnt-notification-adapter",
+        "type": "adapter",
+        "name": "Notification Adapter",
+        "description": "Multi-Channel: Mail, SMS, Push",
+        "technology": "SendGrid, Twilio",
+        "why": "Abstraktion über Notification-Channels für einfache Erweiterbarkeit",
+        "position": { "zone": "bottom", "row": 3, "col": 2.5 }
+      },
+      {
+        "id": "cnt-scheduler-svc",
+        "type": "scheduler",
+        "name": "Scheduler Service",
+        "description": "Poll every 10s: Abgelaufene Holds freigeben",
+        "technology": "Node.js / Cron",
+        "why": "Garantierte Freigabe abgelaufener Reservierungen (NFR Consistency)",
+        "pattern": "Polling mit SKIP LOCKED für Concurrent-Safety",
+        "relatedDecisions": ["dd-4"],
+        "position": { "zone": "center", "row": 3, "col": 0 }
+      },
+      {
+        "id": "cnt-outbox-relay",
+        "type": "service",
+        "name": "Outbox Relay",
+        "description": "Poll unpublished events (every 100ms), publish to Kafka",
+        "technology": "Node.js",
+        "why": "Garantiert Event-Delivery ohne Dual-Write-Problem",
+        "pattern": "Outbox Pattern: Poll → Publish → Mark Published",
+        "relatedDecisions": ["dd-2"],
+        "position": { "zone": "center", "row": 3, "col": 1 }
+      },
+      {
+        "id": "cnt-event-db",
+        "type": "database",
+        "name": "EventDB",
+        "description": "Event-Katalog und Metadaten",
+        "technology": "PostgreSQL",
+        "why": "Relationale Daten mit Read Replicas für Skalierung",
+        "position": { "zone": "bottom", "row": 4, "col": -0.5 }
+      },
+      {
+        "id": "cnt-seats-db",
+        "type": "database",
+        "name": "Seats DB",
+        "description": "System of Record: Sitzplatz-States (FREE/HELD/BOOKED)",
+        "technology": "PostgreSQL",
+        "why": "Single Source of Truth für Sitzplatz-Status (NFR Overselling=0)",
+        "codeSnippets": ["schema-seats", "sql-reserve", "sql-book", "sql-release"],
+        "relatedDecisions": ["dd-4"],
+        "position": { "zone": "bottom", "row": 4, "col": 0.5 }
+      },
+      {
+        "id": "cnt-redis",
+        "type": "cache",
+        "name": "Redis Cache",
+        "description": "8min Lock, Event-Sitzplan Cache (TTL 5s)",
+        "technology": "Redis 7",
+        "why": "Latenz-Reduktion (NFR < 300ms) und temporäre Locks für Reservierungen",
+        "pattern": "Cache-aside mit TTL 5s für Reads, Distributed Lock für Writes",
+        "codeSnippets": ["code-cache-aside"],
+        "relatedDecisions": ["dd-4"],
+        "position": { "zone": "center", "row": 2, "col": 0.5 }
+      },
+      {
+        "id": "cnt-order-db",
+        "type": "database",
+        "name": "Order DB",
+        "description": "Orders mit Status (PENDING/PAID/REFUNDED)",
+        "technology": "PostgreSQL",
+        "why": "Separater Datenspeicher für Order-Bounded-Context",
+        "position": { "zone": "bottom", "row": 4, "col": 2 }
+      },
+      {
+        "id": "cnt-audit-db",
+        "type": "database",
+        "name": "Audit Log DB",
+        "description": "Unveränderlicher Audit Trail",
+        "technology": "PostgreSQL",
+        "why": "NFR Auditability: Append-only, 7 Jahre Retention",
+        "position": { "zone": "bottom", "row": 4, "col": 0.5 }
+      },
+      {
+        "id": "cnt-outbox-db",
+        "type": "database",
+        "name": "Outbox DB",
+        "description": "Outbox-Tabelle für guaranteed event delivery",
+        "technology": "PostgreSQL",
+        "why": "Atomare Speicherung von Domain-Events zusammen mit Business-Daten",
+        "relatedDecisions": ["dd-2"],
+        "position": { "zone": "bottom", "row": 4, "col": 1 }
+      },
+      {
+        "id": "cnt-ext-psp",
+        "type": "external_service",
+        "name": "PSP PayPal",
+        "description": "POST /payment, Webhook /webhooks/payment",
+        "technology": "PayPal API v2",
+        "why": "PCI-DSS Compliance durch externen PSP",
+        "position": { "zone": "top", "row": 0, "col": 2.5 }
+      }
+    ],
+    "relationships": [
+      { "from": "cnt-gateway", "to": "cnt-event-svc", "label": "GET /events", "async": false, "detail": "Event-Katalog und Suche weiterleiten" },
+      { "from": "cnt-gateway", "to": "cnt-reservation-svc", "label": "POST /reservation", "async": false, "detail": "Reservierungs-Requests authentifiziert weiterleiten" },
+      { "from": "cnt-gateway", "to": "cnt-order-svc", "label": "POST /orders/{id}/pay", "async": false, "detail": "Payment-Initiation weiterleiten" },
+      { "from": "cnt-event-svc", "to": "cnt-cdn", "label": "Metadaten + Bilder", "async": false, "detail": "Statische Event-Daten aus CDN laden" },
+      { "from": "cnt-event-svc", "to": "cnt-event-db", "label": "Lesen", "async": false, "detail": "Event-Katalog aus DB oder Read Replica lesen" },
+      { "from": "cnt-event-svc", "to": "cnt-redis", "label": "Cache (sharded)", "async": false, "detail": "Sitzplan-Cache mit TTL 5s, Cache-aside Pattern", "relatedDecision": "dd-4" },
+      { "from": "cnt-reservation-svc", "to": "cnt-seats-db", "label": "Reserve/Book/Release", "async": false, "detail": "Sitzplatz-State-Transitions in Transaktion", "why": "System of Record für Sitzplatz-Status", "relatedDecision": "dd-3" },
+      { "from": "cnt-reservation-svc", "to": "cnt-redis", "label": "8min Lock setzen", "async": false, "detail": "Distributed Lock für Reservierung mit 8min TTL", "why": "Temporärer Lock verhindert Race Conditions", "relatedDecision": "dd-4" },
+      { "from": "cnt-reservation-svc", "to": "cnt-outbox-db", "label": "insert Outbox", "async": false, "detail": "Outbox-Event in derselben DB-Transaktion schreiben", "why": "Atomares Event-Publishing via Outbox Pattern", "relatedDecision": "dd-2" },
+      { "from": "cnt-reservation-svc", "to": "cnt-audit-db", "label": "insert AuditLog", "async": false, "detail": "Audit-Eintrag in derselben Transaktion", "why": "NFR Auditability: Jede Reservierung auditiert" },
+      { "from": "cnt-outbox-relay", "to": "cnt-outbox-db", "label": "Poll unpublished", "async": false, "detail": "Alle 100ms unpublished Events abfragen", "why": "Outbox Pattern: Relay liest und published ausstehende Events", "relatedDecision": "dd-2" },
+      { "from": "cnt-outbox-relay", "to": "cnt-kafka", "label": "publish SeatReserved", "async": true, "detail": "Outbox-Events nach Kafka publishen", "payload": "{ type: SeatReserved, eventId, seatId, userId, orderId, idempotencyKey }", "why": "Entkopplung: Downstream-Services reagieren asynchron", "relatedDecision": "dd-2" },
+      { "from": "cnt-kafka", "to": "cnt-order-svc", "label": "consume SeatReserved", "async": true, "detail": "Order Service konsumiert SeatReserved und erstellt Order", "payload": "{ type: SeatReserved, eventId, seatId, userId, orderId }", "why": "Order wird erst nach erfolgreicher Reservierung angelegt" },
+      { "from": "cnt-order-svc", "to": "cnt-order-db", "label": "create Order PENDING", "async": false, "detail": "Order mit Status PENDING in DB anlegen" },
+      { "from": "cnt-order-svc", "to": "cnt-ext-psp", "label": "POST /payment", "async": false, "detail": "Payment bei PSP initiieren mit merchant_request_id (idempotent)", "why": "Idempotente PSP-Calls verhindern doppelte Charges", "relatedDecision": "dd-3" },
+      { "from": "cnt-ext-psp", "to": "cnt-gateway", "label": "Webhook: payment_confirmed", "async": true, "detail": "PSP sendet Webhook bei erfolgreicher Zahlung", "payload": "{ type: PaymentConfirmed, orderId, amount, status, signature, nonce, timestamp }", "why": "Asynchrone Bestätigung weil PSP-Verarbeitung nicht in Echtzeit" },
+      { "from": "cnt-gateway", "to": "cnt-order-svc", "label": "Webhook weiterleiten", "async": false, "detail": "Webhook-Signature verifizieren, Idempotency prüfen, an Order Service weiterleiten", "why": "Gateway als Security-Boundary für Webhook-Validierung" },
+      { "from": "cnt-order-svc", "to": "cnt-kafka", "label": "publish PaymentConfirmed", "async": true, "detail": "Nach Webhook-Verarbeitung: PaymentConfirmed Event publishen", "payload": "{ type: PaymentConfirmed, orderId, eventId, seatId, userId }", "why": "Downstream-Services (Reservation, Notification) reagieren auf Payment" },
+      { "from": "cnt-kafka", "to": "cnt-reservation-svc", "label": "consume PaymentConfirmed", "async": true, "detail": "Reservation Service bucht Sitz final", "payload": "{ type: PaymentConfirmed, orderId, eventId, seatId }", "why": "Sitz-Status HELD → BOOKED erst nach bestätigter Zahlung" },
+      { "from": "cnt-kafka", "to": "cnt-notification-svc", "label": "consume PaymentConfirmed", "async": true, "detail": "Notification Service generiert und versendet Ticket", "payload": "{ type: PaymentConfirmed, orderId, eventId, seatId, userId }", "why": "Ticket-Versand erst nach bestätigter Zahlung" },
+      { "from": "cnt-notification-svc", "to": "cnt-notification-adapter", "label": "Ticket senden", "async": false, "detail": "Ticket-PDF generieren, über konfigurierten Channel senden" },
+      { "from": "cnt-scheduler-svc", "to": "cnt-seats-db", "label": "Poll abgelaufene Holds", "async": false, "detail": "Alle 10s: SELECT ... WHERE state='HELD' AND hold_expires_at < now() FOR UPDATE SKIP LOCKED", "why": "Garantierte Freigabe bei Payment-Timeout", "relatedDecision": "dd-4" },
+      { "from": "cnt-scheduler-svc", "to": "cnt-kafka", "label": "publish ReservationExpired", "async": true, "detail": "Expired Holds als Events publishen für Cleanup", "payload": "{ type: ReservationExpired, eventId, seatId, orderId }", "why": "Downstream-Services können auf Timeout reagieren", "relatedDecision": "dd-4" },
+      { "from": "cnt-kafka", "to": "cnt-reservation-svc", "label": "consume ReservationExpired", "async": true, "detail": "Sitz-Status zurück auf FREE setzen", "payload": "{ type: ReservationExpired, eventId, seatId }", "why": "Cleanup: Sitz wieder verfügbar machen" }
+    ],
+    "groups": [
+      {
+        "id": "grp-core",
+        "name": "Core Services",
+        "style": "dashed",
+        "elementIds": ["cnt-reservation-svc", "cnt-order-svc", "cnt-event-svc"]
+      },
+      {
+        "id": "grp-data",
+        "name": "Persistence",
+        "style": "dashed",
+        "elementIds": ["cnt-seats-db", "cnt-event-db", "cnt-order-db", "cnt-audit-db", "cnt-outbox-db"]
+      },
+      {
+        "id": "grp-async",
+        "name": "Async Infrastructure",
+        "style": "dashed",
+        "elementIds": ["cnt-kafka", "cnt-outbox-relay", "cnt-scheduler-svc"]
+      }
+    ]
+  },
+
+  "components": {
+    "cnt-reservation-svc": {
+      "elements": [
+        {
+          "id": "cmp-res-controller",
+          "type": "controller",
+          "name": "ReservationController",
+          "description": "REST API Endpoints",
+          "details": ["POST /reservations", "DELETE /reservations/{id}", "GET /events/{id}/seats"],
+          "position": { "zone": "top", "row": 0, "col": 0 }
+        },
+        {
+          "id": "cmp-res-service",
+          "type": "service_class",
+          "name": "ReservationService",
+          "description": "Kern-Business-Logik für Reservierungen",
+          "why": "Kapselt die Unit-of-Work-Transaktion (DB + Outbox + Audit)",
+          "pattern": "Unit-of-Work: alle Writes in einer DB-Transaktion",
+          "details": [
+            "createReservation(): Transaction(seatRepo.updateState, outboxRepo.insert, auditRepo.insert)",
+            "Catch: OptimisticLockError → 409 Conflict",
+            "Catch: UniqueViolation → 400 Duplicate",
+            "releaseReservation()",
+            "validateIdempotent()"
+          ],
+          "codeSnippets": ["code-unit-of-work"],
+          "relatedDecisions": ["dd-2", "dd-3"],
+          "position": { "zone": "center", "row": 1, "col": 0 }
+        },
+        {
+          "id": "cmp-res-availability",
+          "type": "service_class",
+          "name": "SeatAvailabilityService",
+          "description": "Verfügbarkeits-Prüfung mit Cache-aside",
+          "why": "NFR Latency: Cache-aside reduziert DB-Last auf Read-Path",
+          "pattern": "Cache-aside: Redis TTL 5s → DB Fallback",
+          "details": ["checkAvailability()", "getAvailableSeats()"],
+          "codeSnippets": ["code-cache-aside"],
+          "relatedDecisions": ["dd-4"],
+          "position": { "zone": "center", "row": 1, "col": 1 }
+        },
+        {
+          "id": "cmp-res-outbox-relay",
+          "type": "background_worker",
+          "name": "OutboxRelay",
+          "description": "Poll unpublished events (100ms), Publish to Kafka",
+          "why": "Outbox Pattern: garantiert Event-Delivery ohne Dual-Write",
+          "pattern": "Outbox Pattern: Poll → Publish → Mark Published",
+          "relatedDecisions": ["dd-2"],
+          "position": { "zone": "top", "row": 0, "col": 1.5 }
+        },
+        {
+          "id": "cmp-res-consumer",
+          "type": "event_handler",
+          "name": "EventConsumer",
+          "description": "Kafka Consumer für PaymentConfirmed und ReservationExpired",
+          "details": [
+            "PaymentConfirmed → Check Idempotency → updateSeatToBooked",
+            "ReservationExpired → releaseSeat()"
+          ],
+          "position": { "zone": "center", "row": 1, "col": 1.5 }
+        },
+        {
+          "id": "cmp-res-seat-repo",
+          "type": "repository",
+          "name": "SeatRepository",
+          "description": "Data Access für Sitzplatz-Operationen",
+          "details": ["findById()", "updateState()", "findExpired()"],
+          "position": { "zone": "bottom", "row": 2, "col": 0 }
+        },
+        {
+          "id": "cmp-res-outbox-repo",
+          "type": "repository",
+          "name": "OutboxRepository",
+          "description": "Outbox-Tabelle Zugriff",
+          "details": ["insert()", "findUnpublished()", "markPublished()"],
+          "position": { "zone": "bottom", "row": 2, "col": 0.5 }
+        },
+        {
+          "id": "cmp-res-seats-db",
+          "type": "repository",
+          "name": "SeatsDB (Postgres)",
+          "description": "System of Record",
+          "technology": "PostgreSQL",
+          "position": { "zone": "bottom", "row": 3, "col": 0 }
+        },
+        {
+          "id": "cmp-res-outbox-db",
+          "type": "repository",
+          "name": "Outbox DB (Postgres)",
+          "description": "Outbox-Tabelle",
+          "technology": "PostgreSQL",
+          "position": { "zone": "bottom", "row": 3, "col": 0.5 }
+        },
+        {
+          "id": "cmp-res-audit-db",
+          "type": "repository",
+          "name": "Audit Log DB (Postgres)",
+          "description": "Append-only Audit Trail",
+          "technology": "PostgreSQL",
+          "position": { "zone": "bottom", "row": 3, "col": 1 }
+        },
+        {
+          "id": "cmp-res-redis",
+          "type": "repository",
+          "name": "Redis Cache",
+          "description": "TTL 5s Cache, 8min Lock",
+          "technology": "Redis 7",
+          "position": { "zone": "bottom", "row": 3, "col": 1.5 }
+        },
+        {
+          "id": "cmp-res-kafka",
+          "type": "repository",
+          "name": "Kafka Broker",
+          "description": "Event-Streaming Anbindung",
+          "technology": "Kafka",
+          "position": { "zone": "center", "row": 2, "col": 1.5 }
+        }
+      ],
+      "relationships": [
+        { "from": "cmp-res-controller", "to": "cmp-res-service", "label": "Delegiert Business-Logik", "async": false },
+        { "from": "cmp-res-controller", "to": "cmp-res-availability", "label": "Prüft Verfügbarkeit", "async": false },
+        { "from": "cmp-res-service", "to": "cmp-res-seat-repo", "label": "updateState(..., tx)", "async": false, "why": "Sitzplatz-State in Transaktion ändern" },
+        { "from": "cmp-res-service", "to": "cmp-res-outbox-repo", "label": "insert(..., tx)", "async": false, "why": "Outbox-Event in derselben Transaktion", "relatedDecision": "dd-2" },
+        { "from": "cmp-res-availability", "to": "cmp-res-redis", "label": "Try Cache first", "async": false, "detail": "Cache-aside: zuerst Redis, bei Miss zur DB" },
+        { "from": "cmp-res-availability", "to": "cmp-res-seat-repo", "label": "Cache Miss → DB", "async": false },
+        { "from": "cmp-res-seat-repo", "to": "cmp-res-seats-db", "label": "SQL queries", "async": false },
+        { "from": "cmp-res-outbox-repo", "to": "cmp-res-outbox-db", "label": "SQL queries", "async": false },
+        { "from": "cmp-res-outbox-relay", "to": "cmp-res-outbox-repo", "label": "findUnpublished()", "async": false },
+        { "from": "cmp-res-outbox-relay", "to": "cmp-res-kafka", "label": "publish", "async": true, "payload": "{ type: SeatReserved, eventId, seatId, userId, orderId }", "why": "Outbox-Events an Kafka weiterleiten", "relatedDecision": "dd-2" },
+        { "from": "cmp-res-kafka", "to": "cmp-res-consumer", "label": "consume", "async": true, "payload": "{ type: PaymentConfirmed | ReservationExpired, ... }" },
+        { "from": "cmp-res-consumer", "to": "cmp-res-service", "label": "updateSeatToBooked / releaseSeat", "async": false, "detail": "Event-Handler ruft Business-Logik auf" }
+      ],
+      "groups": [
+        {
+          "id": "grp-res-api",
+          "name": "API Layer (REST Controller)",
+          "style": "box",
+          "elementIds": ["cmp-res-controller"]
+        },
+        {
+          "id": "grp-res-business",
+          "name": "Business Layer (Domain Services)",
+          "style": "box",
+          "elementIds": ["cmp-res-service", "cmp-res-availability"]
+        },
+        {
+          "id": "grp-res-bg",
+          "name": "Background Workers",
+          "style": "box",
+          "elementIds": ["cmp-res-outbox-relay", "cmp-res-consumer"]
+        },
+        {
+          "id": "grp-res-data",
+          "name": "Data Access Layer (Repositories)",
+          "style": "box",
+          "elementIds": ["cmp-res-seat-repo", "cmp-res-outbox-repo"]
+        }
+      ]
+    }
+  },
+
+  "code": {
+    "snippets": [
+      {
+        "id": "schema-seats",
+        "parentElement": "cnt-seats-db",
+        "language": "sql",
+        "title": "Schema: seats",
+        "code": "-- System of Record\nCREATE TABLE seats (\n    event_id    uuid NOT NULL,\n    seat_id     text NOT NULL,\n    state       text NOT NULL CHECK (state IN ('FREE','HELD','BOOKED')),\n    hold_expires_at timestamptz,\n    version     bigint NOT NULL DEFAULT 0,\n    PRIMARY KEY (event_id, seat_id)\n);\n\n-- Nur ein aktiver Hold je Sitz:\nCREATE UNIQUE INDEX one_active_hold\n    ON seats(event_id, seat_id)\n    WHERE state = 'HELD' AND hold_expires_at > now();",
+        "annotations": [
+          { "line": 5, "text": "State-Machine: FREE → HELD → BOOKED oder FREE → HELD → FREE (expired)" },
+          { "line": 7, "text": "Optimistic Locking via version column" },
+          { "line": 12, "text": "Partial Unique Index: verhindert doppelte aktive Holds (NFR Overselling=0)" }
+        ]
+      },
+      {
+        "id": "sql-reserve",
+        "parentElement": "cnt-seats-db",
+        "language": "sql",
+        "title": "Reserve (Try Hold)",
+        "code": "-- 1) Try hold\nUPDATE seats\n    SET state='HELD',\n        hold_expires_at=now() + interval '8 minutes',\n        version = version + 1\n    WHERE event_id=:e AND seat_id=:s\n    AND state='FREE';\n\n-- prüfe rowcount=1 => Erfolg, sonst \"AlreadyHeld/Booked\"",
+        "annotations": [
+          { "line": 4, "text": "8 Minuten TTL — konfigurierbar über DD-4" },
+          { "line": 7, "text": "WHERE state='FREE' verhindert Race Condition auf DB-Ebene" }
+        ]
+      },
+      {
+        "id": "sql-book",
+        "parentElement": "cnt-seats-db",
+        "language": "sql",
+        "title": "Buchen (HELD → BOOKED)",
+        "code": "UPDATE seats\n    SET state='BOOKED',\n        hold_expires_at=null,\n        version=version+1\n    WHERE event_id=:e AND seat_id=:s\n    AND state='HELD'\n    AND hold_expires_at > now();",
+        "annotations": [
+          { "line": 6, "text": "Nur HELD-Sitze können gebucht werden" },
+          { "line": 7, "text": "hold_expires_at > now() stellt sicher, dass der Hold noch gültig ist" }
+        ]
+      },
+      {
+        "id": "sql-release",
+        "parentElement": "cnt-seats-db",
+        "language": "sql",
+        "title": "Release (HELD → FREE)",
+        "code": "UPDATE seats\n    SET state='FREE',\n        hold_expires_at=null,\n        version=version+1\n    WHERE event_id=:e AND seat_id=:s\n    AND state='HELD'\n    AND hold_expires_at <= now();",
+        "annotations": [
+          { "line": 7, "text": "Nur abgelaufene Holds werden freigegeben — aktive Holds bleiben bestehen" }
+        ]
+      },
+      {
+        "id": "sql-scheduler-poll",
+        "parentElement": "cnt-scheduler-svc",
+        "language": "sql",
+        "title": "Scheduler: Poll expired Holds",
+        "code": "-- Sperrt Rows, aber überspringt bereits gesperrte\nSELECT * FROM seats\nWHERE state = 'HELD' AND hold_expires_at < now()\nLIMIT 1000\nFOR UPDATE SKIP LOCKED;",
+        "annotations": [
+          { "line": 1, "text": "SKIP LOCKED: mehrere Scheduler-Instanzen können parallel laufen" },
+          { "line": 4, "text": "LIMIT 1000: Batch-Verarbeitung für Backpressure" }
+        ]
+      },
+      {
+        "id": "code-unit-of-work",
+        "parentElement": "cmp-res-service",
+        "language": "typescript",
+        "title": "UnitOfWork: createReservation",
+        "code": "class ReservationService {\n  async createReservation(\n    eventId: string,\n    seatId: string,\n    userId: string,\n    idempotencyKey: string\n  ) {\n    return await db.transaction(async (tx) => {\n      // 1. Check Idempotency\n      const existing = await outboxRepo\n        .findByIdempotencyKey(idempotencyKey, tx);\n      if (existing) return existing;\n\n      // 2. Reserve Seat\n      await seatRepo.updateState(\n        eventId, seatId, 'HELD', currentVersion, tx\n      );\n\n      // 3. Write Outbox\n      const orderId = uuidv4();\n      await outboxRepo.insert({\n        type: 'SeatReserved',\n        payload: { eventId, seatId, userId, orderId },\n        idempotencyKey\n      }, tx);\n\n      // 4. Audit Log\n      await auditRepo.log('ReserveSeat', { eventId, seatId, userId }, tx);\n\n      return { reservationId, orderId };\n    });\n  }\n}",
+        "annotations": [
+          { "line": 8, "text": "Alles in EINER Transaktion — DD-2 Outbox Pattern" },
+          { "line": 11, "text": "Idempotency-Check VOR dem Write — DD-3" },
+          { "line": 16, "text": "Optimistic Locking: currentVersion wird geprüft" },
+          { "line": 28, "text": "Audit Log in derselben Transaktion — NFR Auditability" }
+        ]
+      },
+      {
+        "id": "code-cache-aside",
+        "parentElement": "cmp-res-availability",
+        "language": "typescript",
+        "title": "Cache-aside Pattern",
+        "code": "class SeatAvailabilityService {\n  async getAvailableSeats(eventId: string): Promise<Seat[]> {\n    // 1. Try Cache\n    const cached = await redis.get(`event:${eventId}:seats`);\n    if (cached) return JSON.parse(cached);\n\n    // 2. Cache Miss → DB\n    const seats = await seatRepo.findByEvent(eventId);\n\n    // 3. Populate Cache\n    await redis.setex(\n      `event:${eventId}:seats`,\n      5,  // TTL 5s\n      JSON.stringify(seats)\n    );\n\n    return seats;\n  }\n}",
+        "annotations": [
+          { "line": 4, "text": "Sharded Redis: Key enthält eventId für gleichmäßige Verteilung" },
+          { "line": 13, "text": "TTL 5s: Kompromiss zwischen Aktualität und DB-Entlastung (DD-4)" }
+        ]
+      },
+      {
+        "id": "code-psp-call",
+        "parentElement": "cnt-order-svc",
+        "language": "json",
+        "title": "PSP API Call (idempotent)",
+        "code": "POST https://api.paypal.com/v2/payments\nBody: {\n    amount: 49.99,\n    currency: \"EUR\",\n    merchant_request_id: \"order-123\",\n    return_url: \"https://tickets.example/confirm\",\n    cancel_url: \"https://tickets.example/cancel\"\n}",
+        "annotations": [
+          { "line": 5, "text": "merchant_request_id = orderId → idempotent (DD-3)" }
+        ]
+      }
+    ]
+  }
+}

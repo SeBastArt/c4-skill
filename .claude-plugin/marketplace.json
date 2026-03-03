@@ -1,0 +1,13 @@
+{
+  "plugins": [
+    {
+      "name": "c4",
+      "description": "Interactive C4 architecture diagrams — guided workshop from NFRs to self-contained HTML with drag & drop, tooltips, and code snippets",
+      "version": "2.1.0",
+      "source": {
+        "source": "github",
+        "repo": "SeBastArt/c4-skill"
+      }
+    }
+  ]
+}

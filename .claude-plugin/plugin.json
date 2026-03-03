@@ -1,0 +1,11 @@
+{
+  "name": "c4",
+  "description": "Interactive C4 architecture diagrams — guided workshop from NFRs to self-contained HTML with drag & drop, tooltips, and code snippets",
+  "version": "2.1.0",
+  "author": {
+    "name": "SeBastArt"
+  },
+  "homepage": "https://github.com/SeBastArt/c4-skill",
+  "repository": "https://github.com/SeBastArt/c4-skill",
+  "license": "MIT"
+}
