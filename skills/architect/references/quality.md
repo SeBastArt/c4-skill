@@ -2,7 +2,7 @@
 
 ## Overview
 
-34 rules in 6 categories. Each rule has a severity:
+42 rules in 7 categories. Each rule has a severity:
 - **ERROR** — Must fix. Architecture is broken without it.
 - **WARNING** — Should fix. Quality is degraded.
 - **INFO** — Nice to have. Improves polish.
@@ -25,8 +25,11 @@ Validation levels:
 | S-05 | Every code snippet `parentElement` references an existing element ID | Fix element reference or remove snippet |
 | S-06 | No self-referencing relationships (`from` !== `to`) | Remove the self-reference |
 | S-07 | Every key in `components` references an existing container-level element ID | Remove the orphaned component view or add the container |
-| S-08 | Version field is `"2.0"` | Update version |
+| S-08 | Version field is `"2.1"` | Update version |
 | S-09 | Every relationship has `async` as boolean (not string, not `protocol: "async"`) | Convert `protocol: "async"` to `async: true` |
+| S-10 | Every FR `actor` references an existing context-level `person` or `external_person` element | Fix actor reference |
+| S-11 | Every `relatedFrs` in design decisions references an existing FR ID | Fix FR reference or remove |
+| S-12 | Every `relatedFrs` in elements references an existing FR ID | Fix FR reference or remove |
 
 ---
 
@@ -80,6 +83,18 @@ Validation levels:
 
 ---
 
+## Category F: Functional Requirement Traceability (WARNING/INFO)
+
+| Rule | Severity | Check | Fix |
+|---|---|---|---|
+| F-01 | WARNING | Every FR with `priority: "must"` is referenced by at least one element's `relatedFrs` | Add `relatedFrs` to the implementing element(s) |
+| F-02 | WARNING | Every FR has at least one non-empty acceptance criterion | Add testable acceptance criteria |
+| F-03 | INFO | Every FR with `priority: "must"` or `"should"` is referenced by at least one design decision's `relatedFrs` | Link FR to a design decision |
+| F-04 | INFO | No elements with `relatedFrs` referencing a `wont`-priority FR | Remove reference or change FR priority |
+| F-05 | WARNING | Every FR has a non-empty `priority` field | Set priority (must/should/could/wont) |
+
+---
+
 ## Category V: Visual Quality (INFO/WARNING)
 
 | Rule | Severity | Check | Fix |
@@ -127,13 +142,15 @@ For these rules, offer to auto-fix:
 - **C-06**: Generate label from element names ("→ calls", "→ reads from")
 - **V-04/V-05**: Truncate with ellipsis or suggest abbreviation
 - **V-06**: Infer technology from element type (database → "PostgreSQL", cache → "Redis")
-- **S-08**: Auto-upgrade version to "2.0"
+- **S-08**: Auto-upgrade version to "2.1"
+- **F-05**: Default to `"must"` if priority is empty
 
-## Migration Auto-Fix (v1.0 → v2.0)
+## Migration Auto-Fix (v1.0 / v2.0 → v2.1)
 
-When validating a v1.0 architecture, offer automatic migration:
+When validating an older architecture, offer automatic migration:
 1. Rename `"component"` → find container with `drillDown: "component"`, move to `"components": { "<container-id>": ... }`
 2. Update `drillDown: "component"` → `drillDown: "component:<container-id>"`
 3. Convert `protocol: "async"` → `async: true` on all relationships
 4. Add `ctx-`, `cnt-`, `cmp-` prefixes to IDs if missing (and update all references)
-5. Set `version: "2.0"`
+5. Add empty `"functionalRequirements": []` if missing (v2.0 → v2.1)
+6. Set `version: "2.1"`

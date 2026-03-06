@@ -2,7 +2,7 @@
 
 ## Overview
 
-Converts `architecture.json` (v2.0) to [Structurizr DSL](https://docs.structurizr.com/dsl) format for interoperability with Structurizr, PlantUML C4, and other C4 tools.
+Converts `architecture.json` (v2.1) to [Structurizr DSL](https://docs.structurizr.com/dsl) format for interoperability with Structurizr, PlantUML C4, and other C4 tools.
 
 ## Mapping Rules
 

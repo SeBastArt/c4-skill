@@ -16,20 +16,20 @@ This skill creates **interactive C4 architecture diagrams** as self-contained HT
 **Load references on-demand per phase — NOT all at once:**
 
 ### Tier 1 — Always (minimal baseline):
-- `references/json-schema.md` — Data model definition (v2.0, multi-component)
-- `references/quality.md` — Validation rules (38 rules, 6 categories)
+- `references/json-schema.md` — Data model definition (v2.1, multi-component, FRs + NFRs)
+- `references/quality.md` — Validation rules (42 rules, 7 categories)
 
-### Tier 2 — Phase 2 (NFR collection):
+### Tier 2 — Phase 3 (NFR collection):
 - `references/pattern-catalog.md` — Navigator: NFR→Pattern Quick-Reference, Pattern-Stacks
 
-### Tier 3 — Phase 4-5 (Container & Component decomposition):
+### Tier 3 — Phase 5-6 (Container & Component decomposition):
 - `references/paradigms-guide.md` — Load when choosing decomposition strategy (DDD, EDA, CQRS, etc.)
 - `references/pattern-deep-dive.md` — Load when applying specific patterns to containers/components
 
-### Tier 4 — Phase 7 (Design Decisions):
+### Tier 4 — Phase 8 (Design Decisions):
 - `references/decision-frameworks.md` — ADR, Canvas, ATAM, TARA, Quality Scenarios, Scorecards
 
-### Tier 5 — Phase 9 (Render):
+### Tier 5 — Phase 10 (Render):
 - `references/render-spec.md` — SVG, CSS, JS, layout, colors, accessibility
 - `references/engine.js.md` — Complete rendering engine reference code
 - `templates/base.html` — HTML skeleton template
@@ -38,14 +38,14 @@ This skill creates **interactive C4 architecture diagrams** as self-contained HT
 - `references/example.json` — Load only to check format/structure when unsure
 - `references/structurizr-export.md` — Load only in Export Mode
 
-**Rule:** Never load Tier 3-5 references in Phase 1. Never load Tier 5 before Phase 9. This preserves context window for the actual architecture discussion.
+**Rule:** Never load Tier 3-5 references in Phase 1-2. Never load Tier 5 before Phase 10. This preserves context window for the actual architecture discussion.
 
 ## Output
 
 A single self-contained `.html` file containing:
 - SVG canvases: Context, Container, 1-N Component views (one per decomposed container), Code
 - Tab navigation with breadcrumbs (component tabs show container name)
-- NFR panel (collapsible right sidebar)
+- Requirements panel (collapsible right sidebar: FRs, NFRs, Design Decisions)
 - Code snippet overlays (dark theme, Catppuccin Mocha syntax highlighting)
 - Drill-down navigation between levels (double-click)
 - Rich tooltips on elements (why, pattern, decisions) and arrows (payload, why, detail)
@@ -67,14 +67,38 @@ Ask the user:
 1. **System name** — What is this system called?
 2. **Core purpose** — What does it do in one sentence?
 3. **Primary actors** — Who or what uses the system? (Users, admins, external systems, scheduled jobs)
-4. **Key use cases** — What are the 3-5 most important things the system does?
+4. **Key capabilities** — What are the 3-5 most important things the system does? (These become inputs for Phase 2: FRs)
 5. **External dependencies** — What external systems does it integrate with? (Payment providers, auth, email, third-party APIs)
 
 **Output:** A summary paragraph that the user confirms.
 
 ---
 
-### Phase 2: Non-Functional Requirements (NFRs)
+### Phase 2: Functional Requirements (FRs)
+
+**Goal:** Capture what the system must do — structured and testable.
+
+Transform the key use cases from Phase 1 into structured Functional Requirements. For each FR, ask:
+
+1. **Title** — Short name (e.g., "Sitzplatz reservieren")
+2. **Description** — What does the system do, from the actor's perspective?
+3. **Actor** — Which person/external system triggers this? (Must reference a context-level element ID)
+4. **Priority** — MoSCoW: must / should / could / wont
+5. **Acceptance Criteria** — 2-5 testable conditions per FR (e.g., "Sitz wechselt zu Status HELD", "Reservierung hat eine TTL von 8 Minuten")
+
+**Rules:**
+- Every FR MUST have at least one acceptance criterion — if it's not testable, it's not a requirement
+- Use the actor's perspective: "Der Kunde kann..." not "Das System soll..."
+- Focus on the "what", not the "how" — implementation details come in later phases
+- Group related use cases into one FR when they share the same actor and domain concept
+- Mark FRs as `wont` to explicitly document what is out of scope
+- Typical projects have 5-15 FRs
+
+**Output:** A numbered FR list with id, title, description, actor, priority, and acceptance criteria.
+
+---
+
+### Phase 3: Non-Functional Requirements (NFRs)
 
 **Goal:** Identify the quality attributes that drive architectural decisions.
 
@@ -93,7 +117,7 @@ Walk through each category and ask if it is relevant. For each relevant NFR, get
 
 **Rules:**
 - Every NFR MUST have a measurable metric — no vague statements like "should be fast"
-- Identify which NFRs will drive architectural decisions (these become inputs for Phase 6)
+- Identify which NFRs will drive architectural decisions (these become inputs for Phase 8)
 - Typical projects have 3-7 relevant NFRs
 
 **Pattern-Hinweis:** Nach dem Erfassen aller NFRs, schlage relevante Patterns aus `references/pattern-catalog.md` vor:
@@ -105,13 +129,13 @@ Walk through each category and ask if it is relevant. For each relevant NFR, get
 - Observability → Sidecar (OpenTelemetry), Structured Logging
 - Auditability → Event Sourcing, Append-only Logs
 
-Frage den User: "Basierend auf den NFRs schlage ich folgende Patterns vor: [...]. Welche davon sind relevant?" Diese Vorauswahl beschleunigt Phasen 4-7.
+Frage den User: "Basierend auf den NFRs schlage ich folgende Patterns vor: [...]. Welche davon sind relevant?" Diese Vorauswahl beschleunigt Phasen 5-8.
 
 **Output:** A numbered NFR list with id, category, title, metric, and approach.
 
 ---
 
-### Phase 3: Context Level (C4 Level 1)
+### Phase 4: Context Level (C4 Level 1)
 
 **Goal:** Define the system boundary — who interacts with the system and what external systems exist.
 
@@ -140,7 +164,7 @@ For each relationship, define:
 
 ---
 
-### Phase 4: Container Level (C4 Level 2)
+### Phase 5: Container Level (C4 Level 2)
 
 **Goal:** Decompose the main system into deployable containers.
 
@@ -171,7 +195,7 @@ Organize containers into **groups** (logical clusters):
 - Async Infrastructure
 - External
 
-**Pattern-Stacks anwenden:** Basierend auf den in Phase 2 vorausgewählten Patterns, schlage bewährte Kombinationen vor (siehe `references/pattern-catalog.md`):
+**Pattern-Stacks anwenden:** Basierend auf den in Phase 3 vorausgewählten Patterns, schlage bewährte Kombinationen vor (siehe `references/pattern-catalog.md`):
 - **Event-Driven Consistency:** Outbox + Idempotency + Retry → Service + Outbox-DB + Relay + Broker
 - **Resilience:** Circuit Breaker + Retry + Bulkhead → in Services oder als Sidecar
 - **CQRS + Event Sourcing:** Command Service + Event Store + Projection + Read DB + Broker
@@ -195,7 +219,7 @@ Für jeden eingesetzten Pattern:
 
 ---
 
-### Phase 5: Component Level (C4 Level 3)
+### Phase 6: Component Level (C4 Level 3)
 
 **Goal:** Show the internal structure of 1-3 key containers. Each gets its own component view.
 
@@ -227,7 +251,7 @@ For each component, capture:
 
 ---
 
-### Phase 6: Code Level (C4 Level 4)
+### Phase 7: Code Level (C4 Level 4)
 
 **Goal:** Show concrete implementation for critical paths.
 
@@ -256,7 +280,7 @@ For each snippet:
 
 ---
 
-### Phase 7: Design Decisions
+### Phase 8: Design Decisions
 
 **Goal:** Document the key architectural decisions with trade-offs.
 
@@ -267,14 +291,16 @@ For each important decision:
 4. **Trade-off** — What are the downsides?
 5. **Alternatives** — What else was considered?
 6. **Related NFRs** — Which NFRs drive this decision?
-7. **Related Elements** — Which containers/components implement this?
+7. **Related FRs** — Which FRs does this decision support?
+8. **Related Elements** — Which containers/components implement this?
 
 **Rules:**
 - Every NFR should be addressed by at least one design decision
+- Every `must`-priority FR should be traceable to at least one element
 - Decisions must reference concrete elements (not abstract concepts)
 - Trade-offs must be honest — every decision has downsides
 - Typical projects have 3-7 design decisions
-- Every pattern used in Phase 4/5 MUST have a corresponding design decision
+- Every pattern used in Phase 5/6 MUST have a corresponding design decision
 
 **Qualitäts-Szenario pro Decision:** Für jede Design Decision, formuliere mindestens ein Qualitäts-Szenario nach dem Template:
 ```
@@ -286,26 +312,26 @@ Beispiel: "Wenn der Kafka-Broker ausfällt, unter normaler Last, dann bleiben Ev
 
 ---
 
-### Phase 8: Assembly & Validation
+### Phase 9: Assembly & Validation
 
 **Goal:** Assemble everything into `architecture.json` and validate.
 
-1. Build the complete JSON following `references/json-schema.md` (v2.0 format)
+1. Build the complete JSON following `references/json-schema.md` (v2.1 format)
 2. Use `components` dictionary (not singular `component`) for component views
 3. Ensure all IDs use correct prefixes (`ctx-`, `cnt-`, `cmp-<container>-`)
 4. Ensure all relationships use `async: true/false` (boolean, not `protocol: "async"`)
-5. Run ALL validation rules from `references/quality.md` (38 rules, 6 categories)
+5. Run ALL validation rules from `references/quality.md` (42 rules, 7 categories)
 6. Fix any errors, warn about warnings
 7. Write the validated `architecture.json` to disk
 
 **Validation is not optional.** Every architecture must pass at minimum:
-- All structural integrity rules (S-01 to S-10) — zero errors
+- All structural integrity rules (S-01 to S-12) — zero errors
 - All completeness rules (C-01 to C-08) — zero errors, warnings acceptable
 - All cross-level consistency rules (X-01 to X-05) — warnings acceptable
 
 ---
 
-### Phase 9: Render
+### Phase 10: Render
 
 **Goal:** Generate an interactive, draggable HTML visualization.
 
@@ -321,6 +347,7 @@ Beispiel: "Wenn der Kafka-Broker ausfällt, unter normaler Last, dann bleiben Ev
    - `C4.levels.container` — same structure
    - `C4.levels.components["<container-id>"]` — one entry per decomposed container, same structure
    - `C4.code.snippets` — code cards with `{id, title, lang, code, parentElement, annotations}`
+   - `C4.frs` — FR data for the panel
    - `C4.nfrs` — NFR data for the panel
    - `C4.designDecisions` — decision data for the panel and Why-Layer
 5. Calculate initial element positions using the layout algorithm from json-schema.md
@@ -337,6 +364,7 @@ Beispiel: "Wenn der Kafka-Broker ausfällt, unter normaler Last, dann bleiben Ev
    - `{{CODE_W}}` / `{{CODE_H}}` — code viewBox (auto-calculated, default: 1100 x 600)
    - `{{COMPONENT_SVGS}}` — one `<svg>` per component view (NO local defs)
    - `{{COMPONENT_TABS}}` — one `<button>` per component view
+   - `{{FR_PANEL_HTML}}` — FR items HTML
    - `{{NFR_PANEL_HTML}}` — NFR items HTML
    - `{{DESIGN_DECISIONS_HTML}}` — DD items HTML with `data-elements` attribute
 10. Write the single HTML file to disk
@@ -354,15 +382,15 @@ Beispiel: "Wenn der Kafka-Broker ausfällt, unter normaler Last, dann bleiben Ev
 
 ## Quick Mode
 
-If the user says "quick" or provides a very detailed specification upfront, compress Phases 1-7 into a single analysis step. Still validate (Phase 8) and render (Phase 9) with full rigor.
+If the user says "quick" or provides a very detailed specification upfront, compress Phases 1-8 into a single analysis step. Still validate (Phase 9) and render (Phase 10) with full rigor.
 
 ## Render-Only Mode
 
 If an `architecture.json` already exists:
-- Skip Phases 1-7
+- Skip Phases 1-8
 - Load the JSON
-- Validate (Phase 8)
-- Render (Phase 9)
+- Validate (Phase 9)
+- Render (Phase 10)
 
 Trigger: User says "render", "visualize", or provides a path to an existing architecture.json.
 
@@ -379,17 +407,18 @@ Trigger: User says "validate", "check", or "review" with an architecture.json.
 
 If the user wants to modify an existing architecture:
 1. **Load** the existing `architecture.json`
-2. **Scope** — Ask: What should change? (new container, new NFR, changed relationship, new component view, etc.)
+2. **Scope** — Ask: What should change? (new container, new FR, new NFR, changed relationship, new component view, etc.)
 3. **Impact Analysis** — Show which elements, relationships, decisions, and NFRs are affected by the change
 4. **Apply** — Make the targeted changes, preserving everything else
 5. **Cascade Check** — Verify cross-level consistency:
    - New container → Does it need component decomposition?
    - Removed relationship → Are elements now orphaned?
+   - New FR → Which elements implement it? Is priority set?
    - New NFR → Is there a design decision addressing it?
    - Changed element → Do related decisions/snippets need updating?
-6. **Validate** (Phase 8) — Run full validation
+6. **Validate** (Phase 9) — Run full validation
 7. **Diff Summary** — Present a before/after diff of changed elements
-8. **Render** (Phase 9) — Re-render the updated HTML
+8. **Render** (Phase 10) — Re-render the updated HTML
 
 **Rules:**
 - Never delete elements without explicit user confirmation
@@ -416,7 +445,7 @@ See `references/structurizr-export.md` for Structurizr DSL export specification.
 ## Critical Quality Principles
 
 1. **Every element answers three questions:** What is it? (name) What technology? How does it fit? (relationships)
-2. **NFRs drive decisions, decisions drive elements** — This chain must be traceable
+2. **FRs define what, NFRs define how well, decisions drive elements** — Both chains must be traceable
 3. **No orphans** — Every element must be connected
 4. **Levels tell different stories** — Context = who, Container = what, Component = how, Code = proof
 5. **Honest trade-offs** — Every decision has downsides. Document them.

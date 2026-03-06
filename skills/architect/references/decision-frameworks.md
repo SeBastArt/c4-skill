@@ -140,7 +140,7 @@ Workshop-Tool für Projektstart — definiert Rahmenbedingungen bevor die Archit
 | Risks & Open Questions | Was könnte schiefgehen? | "Unklare Ownership für shared Events" |
 | Next Steps | Was tun wir als nächstes? | "arc42 aufsetzen, erster ADR zu Event Bus" |
 
-→ Output fließt direkt in C4-Workshop Phase 1 (Scope) + Phase 2 (NFRs)
+→ Output fließt direkt in C4-Workshop Phase 1 (Scope) + Phase 2 (FRs) + Phase 3 (NFRs)
 
 ---
 
@@ -342,11 +342,11 @@ Das C4-Modell des Skills deckt arc42-Abschnitte ab:
 
 | arc42-Abschnitt | C4-Skill Mapping |
 |---|---|
-| 1. Einführung & Ziele | Phase 1 (Scope) |
-| 2. Randbedingungen | Phase 2 (NFRs) als Constraints |
-| 3. Kontextabgrenzung | Phase 3 (Context Level) |
+| 1. Einführung & Ziele | Phase 1 (Scope) + Phase 2 (FRs) |
+| 2. Randbedingungen | Phase 3 (NFRs) als Constraints |
+| 3. Kontextabgrenzung | Phase 4 (Context Level) |
 | 4. Lösungsstrategie | Design Decisions |
-| 5. Bausteinsicht | Phase 4 (Container) + Phase 5 (Component) |
+| 5. Bausteinsicht | Phase 5 (Container) + Phase 6 (Component) |
 | 6. Laufzeitsicht | Relationships mit Detail + Payload |
 | 7. Verteilungssicht | Technology-Felder auf Containern |
 | 8. Querschnittliche Konzepte | Patterns (pattern-deep-dive.md) |
@@ -361,11 +361,11 @@ Das C4-Modell des Skills deckt arc42-Abschnitte ab:
 
 ```
 Projekt-Start:
-  AIC Workshop → Phase 1 (Scope) + Phase 2 (NFRs)
+  AIC Workshop → Phase 1 (Scope) + Phase 2 (FRs) + Phase 3 (NFRs)
 
 Architektur-Design:
-  Pattern-Catalog → Phase 4 (Container) + Phase 5 (Component)
-  Decision Canvas → Phase 7 (Design Decisions)
+  Pattern-Catalog → Phase 5 (Container) + Phase 6 (Component)
+  Decision Canvas → Phase 8 (Design Decisions)
 
 Validierung:
   Risk Storming auf C4-Diagramm → Pre-Mortem → Quality Scenarios

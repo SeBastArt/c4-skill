@@ -414,6 +414,13 @@ function showElementTooltip(el, x, y) {
   if (el.desc) html += `<br><span style="font-size:11px">${esc(el.desc)}</span>`;
   if (el.why) html += `<br><span style="color:#89B4FA;font-style:italic">Why: ${esc(el.why)}</span>`;
   if (el.pattern) html += `<br><span style="color:#A6E3A1;font-family:monospace;font-size:10px">Pattern: ${esc(el.pattern)}</span>`;
+  if (el.relatedFrs && el.relatedFrs.length) {
+    html += '<br>';
+    el.relatedFrs.forEach(frId => {
+      const fr = (C4.frs || []).find(f => f.id === frId);
+      if (fr) html += `<span style="color:#CE93D8;font-size:10px">FR: ${esc(fr.id)} — ${esc(fr.title)}</span><br>`;
+    });
+  }
   if (el.relatedDecisions && el.relatedDecisions.length) {
     html += '<br>';
     el.relatedDecisions.forEach(ddId => {
@@ -833,6 +840,16 @@ body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; f
 .tab.active { background: #1168BD; color: #fff; border-color: #0D5CA8; }
 .nfr-toggle { padding: 6px 12px; border: 1px solid #ddd; border-radius: 6px; background: #F5F5F5; cursor: pointer; font-size: 12px; font-weight: 500; transition: all 0.15s; }
 .nfr-toggle:hover { background: #E8E8E8; }
+.fr-item { margin-bottom: 12px; padding: 8px; background: rgba(255,255,255,0.6); border-radius: 6px; border: 1px solid #E1BEE7; }
+.fr-title { font-size: 13px; font-weight: 600; margin: 2px 0; }
+.fr-desc { font-size: 11px; color: #555; margin-top: 2px; }
+.fr-priority { display: inline-block; font-size: 9px; font-weight: 700; text-transform: uppercase; padding: 1px 6px; border-radius: 3px; margin-left: 6px; }
+.fr-priority.must { background: #FFCDD2; color: #C62828; }
+.fr-priority.should { background: #FFE0B2; color: #E65100; }
+.fr-priority.could { background: #E1BEE7; color: #6A1B9A; }
+.fr-priority.wont { background: #E0E0E0; color: #616161; }
+.fr-criteria { font-size: 10px; color: #666; margin-top: 4px; padding-left: 12px; }
+.fr-criteria li { margin-bottom: 2px; }
 
 /* Canvas */
 .canvas-area { flex: 1; overflow: auto; padding: 20px; position: relative; }
@@ -909,11 +926,12 @@ body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; f
 The rendering engine above is **complete and static**. When generating an HTML file, only these parts are dynamic:
 
 1. **`const C4 = { ... }`** — The data object built from `architecture.json`
-2. **`{{NFR_PANEL_HTML}}`** — NFR and Design Decision HTML for the aside
-3. **`{{DESIGN_DECISIONS_HTML}}`** — DD items with `data-elements` attribute
-4. **`{{COMPONENT_SVGS}}`** — One `<svg id="svg-component-<id>">` per component view
-5. **`{{COMPONENT_TABS}}`** — One `<button class="tab" data-level="component:<id>">` per component view
-6. **ViewBox dimensions** — Calculated per level from element count and positions
-7. **`{{PROJECT_NAME}}`** — From `project.name`
+2. **`{{FR_PANEL_HTML}}`** — FR items HTML for the aside
+3. **`{{NFR_PANEL_HTML}}`** — NFR items HTML for the aside
+4. **`{{DESIGN_DECISIONS_HTML}}`** — DD items with `data-elements` attribute
+5. **`{{COMPONENT_SVGS}}`** — One `<svg id="svg-component-<id>">` per component view
+6. **`{{COMPONENT_TABS}}`** — One `<button class="tab" data-level="component:<id>">` per component view
+7. **ViewBox dimensions** — Calculated per level from element count and positions
+8. **`{{PROJECT_NAME}}`** — From `project.name`
 
 Everything else (CSS, JS engine, template structure) is copied verbatim from this reference.

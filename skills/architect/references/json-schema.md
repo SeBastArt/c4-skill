@@ -4,8 +4,9 @@
 
 ```json
 {
-  "version": "2.0",
+  "version": "2.1",
   "project": { ... },
+  "functionalRequirements": [ ... ],
   "nfrs": [ ... ],
   "designDecisions": [ ... ],
   "context": { "elements": [], "relationships": [], "groups": [] },
@@ -17,7 +18,7 @@
 }
 ```
 
-### Migration von v1.0
+### Migration von v1.0 / v2.0
 
 Falls ein `"component"` (Singular) Objekt existiert, wird es automatisch migriert:
 1. Finde den Container mit `drillDown: "component"` im Container-Level
@@ -34,6 +35,25 @@ Falls ein `"component"` (Singular) Objekt existiert, wird es automatisch migrier
   "date": "string (ISO 8601)"
 }
 ```
+
+## Functional Requirements (FRs)
+
+```json
+{
+  "id": "fr-01",
+  "title": "string (required) — short name (e.g., 'Sitzplatz reservieren')",
+  "description": "string (required) — what the system must do, from the actor's perspective",
+  "actor": "string (required) — element ID of the primary actor (e.g., 'ctx-customer')",
+  "priority": "must | should | could | wont",
+  "acceptanceCriteria": ["string (required) — testable conditions that define 'done'"]
+}
+```
+
+**Rules:**
+- Every FR must have at least one acceptance criterion — untestable requirements are rejected
+- `actor` must reference an existing context-level `person` or `external_person` element
+- `priority` follows MoSCoW: `must` = mandatory for MVP, `should` = important, `could` = nice-to-have, `wont` = explicitly excluded (documented for clarity)
+- Typical projects have 5-15 FRs
 
 ## NFRs
 
@@ -62,11 +82,12 @@ Falls ein `"component"` (Singular) Objekt existiert, wird es automatisch migrier
   "alternatives": ["string — what else was considered?"],
   "qualityScenario": "string — testable quality scenario: 'Wenn [Stimulus] unter [Bedingung] dann [Reaktion] gemessen an [Metrik]'",
   "relatedNfrs": ["nfr-01"],
+  "relatedFrs": ["fr-01"],
   "relatedElements": ["container-id or component-id"]
 }
 ```
 
-**Rule:** Every design decision must have a non-empty `tradeoff` and reference at least one NFR. Quality scenarios are strongly recommended for pattern-based decisions.
+**Rule:** Every design decision must have a non-empty `tradeoff` and reference at least one NFR or FR. Quality scenarios are strongly recommended for pattern-based decisions.
 
 ## C4 Levels: Elements
 
@@ -120,6 +141,7 @@ Falls ein `"component"` (Singular) Objekt existiert, wird es automatisch migrier
   "technology": "string — tech stack (e.g., 'Node.js / Express', 'PostgreSQL 15', 'Redis 7')",
   "drillDown": "string — target level to navigate to on click ('container', 'component:<container-id>')",
   "relatedDecisions": ["string — decision IDs"],
+  "relatedFrs": ["string — functional requirement IDs this element implements"],
   "why": "string — WHY does this element exist? Which NFR or business need drives it?",
   "pattern": "string — what architectural pattern does this implement and how? (e.g., 'Cache-aside with TTL 5s')",
   "position": {
@@ -265,3 +287,6 @@ Groups are visual containers that cluster related elements. They render as a lab
 7. Every key in `components` must reference an existing container-level element ID
 8. Every container with `drillDown` starting with `"component"` must have a corresponding entry in `components`
 9. Every code snippet `parentElement` must reference an existing element ID
+10. All `relatedFrs` in decisions must reference existing FR IDs
+11. All `relatedFrs` in elements must reference existing FR IDs
+12. Every FR `actor` must reference an existing context-level `person` or `external_person` element

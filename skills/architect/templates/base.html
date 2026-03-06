@@ -19,7 +19,7 @@
       {{COMPONENT_TABS}}
       <button class="tab" role="tab" aria-selected="false" data-level="code" onclick="switchLevel('code')">Code</button>
     </div>
-    <button class="nfr-toggle" onclick="document.querySelector('.nfr-panel').classList.toggle('collapsed')" aria-expanded="true">NFRs</button>
+    <button class="nfr-toggle" onclick="document.querySelector('.nfr-panel').classList.toggle('collapsed')" aria-expanded="true">Requirements</button>
   </nav>
 
   <!-- Shared SVG defs — single source for filter + marker, referenced by all diagram SVGs -->
@@ -52,6 +52,7 @@
   </div>
 
   <aside class="nfr-panel">
+    {{FR_PANEL_HTML}}
     {{NFR_PANEL_HTML}}
     {{DESIGN_DECISIONS_HTML}}
   </aside>

@@ -42,7 +42,7 @@
       <g class="elements-layer"></g>  <!-- foreignObject code cards -->
     </svg>
   </div>
-  <aside class="nfr-panel"><!-- NFRs + Design Decisions --></aside>
+  <aside class="nfr-panel"><!-- FRs + NFRs + Design Decisions --></aside>
   <div class="tooltip"></div>
   <div class="code-overlay">...</div>
   <div class="legend">...</div>
@@ -82,6 +82,7 @@ const C4 = {
           why,           // string? — why does this element exist?
           pattern,       // string? — architectural pattern implemented
           relatedDecisions, // string[]? — decision IDs
+          relatedFrs,    // string[]? — functional requirement IDs
           codeSnippets,  // string[]? — snippet IDs
           x, y, w, h    // number — position and dimensions (mutable)
         }
@@ -124,6 +125,16 @@ const C4 = {
       }
     ]
   },
+  frs: [
+    {
+      id,              // string — FR ID
+      title,           // string — short name
+      desc,            // string — what the system must do
+      actor,           // string — actor element ID
+      priority,        // string — must/should/could/wont
+      acceptanceCriteria // string[] — testable conditions
+    }
+  ],
   nfrs: [
     {
       id,              // string — NFR ID
@@ -142,6 +153,7 @@ const C4 = {
       decision,        // string? — what was chosen and why?
       tradeoff,        // string — what are the downsides?
       relatedNfrs,     // string[] — NFR IDs
+      relatedFrs,      // string[]? — FR IDs
       relatedElements  // string[] — element IDs
     }
   ]
@@ -176,6 +188,7 @@ The rendering engine transforms `architecture.json` fields to the C4 JS object:
 | `relationship.protocol` | _(not in JS)_ | Used only for Structurizr export |
 | `group.elementIds` | `ids` | Shortened key name |
 | `group.style` | _(not in JS)_ | All groups render the same way |
+| `fr.description` | `desc` | Shortened key name |
 | All other fields | Same name | Passed through directly |
 
 ---
@@ -450,7 +463,7 @@ The complete CSS is defined in `references/engine.js.md` → "CSS to Include" se
 - **Layout:** `body` is a flex column; `.canvas-area` fills remaining space with auto overflow
 - **SVG visibility:** Only `svg.active` is displayed; tab switching toggles this class
 - **Drag feedback:** `.c4-element.dragging` gets opacity 0.85 + drop-shadow
-- **NFR Panel:** Fixed right sidebar 360px, background #FFF9E6, collapsible via `.collapsed`
+- **Requirements Panel:** Fixed right sidebar 360px, background #FFF9E6, collapsible via `.collapsed`, contains FRs + NFRs + DDs
 - **Code Overlay:** Full-screen modal, dark theme #1E1E2E, Catppuccin Mocha syntax colors
 - **Print CSS:** Hides chrome, shows all SVGs, NFR panel becomes static
 
@@ -463,7 +476,8 @@ The complete CSS is defined in `references/engine.js.md` → "CSS to Include" se
   3. **Description** (normal, 11px)
   4. **Why?** section (if element has `why` field): italic, #89B4FA (blue), prefixed with "Why: "
   5. **Pattern** section (if element has `pattern` field): monospace, #A6E3A1 (green), prefixed with "Pattern: "
-  6. **Decisions** (if element has `relatedDecisions`): small links, #F9E2AF (yellow)
+  6. **FRs** (if element has `relatedFrs`): small tags, #CE93D8 (purple), prefixed with "FR: "
+  7. **Decisions** (if element has `relatedDecisions`): small links, #F9E2AF (yellow)
 
 ### Arrow Tooltip (Rich)
 - Triggered by hover on arrow label background rect or arrow path
@@ -557,7 +571,7 @@ Color mapping (Catppuccin Mocha):
 | Hover arrow label/path | Rich tooltip: label, detail, **payload**, **why**, decision link |
 | Click tab | Switch C4 level (component tabs show container name) |
 | Press 1 / 2 / 3+ / last | Switch to Context / Container / Component views / Code |
-| Click "NFRs" button | Toggle NFR panel |
+| Click "Requirements" button | Toggle requirements panel (FRs + NFRs + DDs) |
 | Hover design decision (panel) | Highlight related elements (gold dashed stroke) |
 | Click code card (Code level) | Open code overlay |
 | Press Escape | Close code overlay |
@@ -578,6 +592,7 @@ Color mapping (Catppuccin Mocha):
 - [ ] Double-click drill-down navigates correctly
 - [ ] No initial element overlaps (check all levels)
 - [ ] All labels readable (no truncation)
+- [ ] FR panel shows all FRs with priority badges and acceptance criteria
 - [ ] NFR panel shows all NFRs with metrics
 - [ ] Design decision hover highlights correct elements
 - [ ] Code snippets display with syntax highlighting and `why` subtitle

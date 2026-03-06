@@ -6,9 +6,9 @@ Dieser Katalog verweist auf die drei Deep-Dive-Referenzen. Lade sie kontextuell:
 
 | Datei | Inhalt | Wann laden |
 |---|---|---|
-| `pattern-deep-dive.md` | 25+ Patterns mit Mechanismen, Code, Tools, Failure Modes | Phase 4 (Container), Phase 5 (Component) |
-| `paradigms-guide.md` | 10 Paradigmen mit Entscheidungsbaum, C4-Mapping, Anti-Patterns | Phase 1 (Scope), Phase 4 (Container) |
-| `decision-frameworks.md` | ADR, Canvas, ATAM, Fitness Functions, Scorecards, Pre-Mortem | Phase 7 (Decisions), Amend Mode, Validate Mode |
+| `pattern-deep-dive.md` | 25+ Patterns mit Mechanismen, Code, Tools, Failure Modes | Phase 5 (Container), Phase 6 (Component) |
+| `paradigms-guide.md` | 10 Paradigmen mit Entscheidungsbaum, C4-Mapping, Anti-Patterns | Phase 1 (Scope), Phase 5 (Container) |
+| `decision-frameworks.md` | ADR, Canvas, ATAM, Fitness Functions, Scorecards, Pre-Mortem | Phase 8 (Decisions), Amend Mode, Validate Mode |
 
 ## Quick-Reference: NFR → Pattern
 

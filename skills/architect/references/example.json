@@ -1,11 +1,100 @@
 {
-  "version": "2.0",
+  "version": "2.1",
   "project": {
     "name": "Ticket Reservation System",
     "description": "Event-Ticketing-Plattform mit Sitzplatzreservierung, Bezahlung und Benachrichtigung. Unterstützt 20k TPS bei Overselling=0 Garantie.",
     "author": "Sebastian",
     "date": "2025-03-02"
   },
+
+  "functionalRequirements": [
+    {
+      "id": "fr-01",
+      "title": "Events durchsuchen",
+      "description": "Kunde kann nach Events suchen und verfügbare Sitzplätze einsehen",
+      "actor": "ctx-customer",
+      "priority": "must",
+      "acceptanceCriteria": [
+        "Event-Katalog ist durchsuchbar nach Name, Datum, Ort",
+        "Verfügbare Sitzplätze werden in Echtzeit angezeigt (max. 5s Verzögerung)",
+        "Event-Details enthalten Preis, Datum, Venue-Informationen"
+      ]
+    },
+    {
+      "id": "fr-02",
+      "title": "Sitzplatz reservieren",
+      "description": "Kunde kann einen verfügbaren Sitzplatz für eine begrenzte Zeit reservieren",
+      "actor": "ctx-customer",
+      "priority": "must",
+      "acceptanceCriteria": [
+        "Sitz wechselt zu Status HELD",
+        "Reservierung hat eine TTL von 8 Minuten",
+        "Idempotency-Key verhindert Doppel-Reservierungen",
+        "Bereits reservierte/gebuchte Sitze werden abgelehnt"
+      ]
+    },
+    {
+      "id": "fr-03",
+      "title": "Ticket bezahlen",
+      "description": "Kunde kann eine Reservierung über den Payment Service Provider bezahlen",
+      "actor": "ctx-customer",
+      "priority": "must",
+      "acceptanceCriteria": [
+        "Payment wird über externen PSP (PayPal) abgewickelt",
+        "Nach erfolgreicher Zahlung wechselt Sitz zu BOOKED",
+        "Kunde erhält Bestätigungs-Ticket per Mail/SMS",
+        "Doppelte Charges werden durch idempotente PSP-Calls verhindert"
+      ]
+    },
+    {
+      "id": "fr-04",
+      "title": "Reservierung automatisch freigeben",
+      "description": "System gibt nicht bezahlte Reservierungen nach Timeout automatisch frei",
+      "actor": "ctx-customer",
+      "priority": "must",
+      "acceptanceCriteria": [
+        "Reservierungen werden nach 8 Minuten ohne Zahlung freigegeben",
+        "Freigegebene Sitze sind sofort wieder verfügbar",
+        "Freigabe erfolgt innerhalb von max. 10s nach Ablauf"
+      ]
+    },
+    {
+      "id": "fr-05",
+      "title": "Events anlegen und verwalten",
+      "description": "Admin kann neue Events anlegen und bestehende Events verwalten",
+      "actor": "ctx-admin",
+      "priority": "must",
+      "acceptanceCriteria": [
+        "Admin kann Events mit Name, Datum, Venue und Sitzplan anlegen",
+        "Admin kann Event-Details nachträglich bearbeiten",
+        "Admin kann Events deaktivieren"
+      ]
+    },
+    {
+      "id": "fr-06",
+      "title": "System-Monitoring",
+      "description": "Admin kann Metriken, Traces und Logs des Systems einsehen",
+      "actor": "ctx-admin",
+      "priority": "should",
+      "acceptanceCriteria": [
+        "Dashboard zeigt Success-Rate, Callback-Lag und DLQ-Depth",
+        "Traces sind innerhalb von 30s nach Request sichtbar",
+        "Alerts werden bei Schwellenwert-Überschreitung ausgelöst"
+      ]
+    },
+    {
+      "id": "fr-07",
+      "title": "Refund-Prozess",
+      "description": "Kunde kann innerhalb einer definierten Frist eine Rückerstattung beantragen",
+      "actor": "ctx-customer",
+      "priority": "could",
+      "acceptanceCriteria": [
+        "Refund-Antrag wird über PSP abgewickelt",
+        "Sitz wird nach erfolgreichem Refund wieder freigegeben",
+        "Refund wird im Audit Trail dokumentiert"
+      ]
+    }
+  ],
 
   "nfrs": [
     {
@@ -75,6 +164,7 @@
       "alternatives": ["Checkout Orchestrator als separater Service"],
       "qualityScenario": "Wenn ein Kunde einen Sitz reserviert, unter Peak-Load 20k TPS, dann erhält er innerhalb von < 300ms eine Bestätigung mit orderId, gemessen an p95 Latency.",
       "relatedNfrs": ["nfr-lat-1"],
+      "relatedFrs": ["fr-02", "fr-03"],
       "relatedElements": ["cnt-reservation-svc", "cnt-order-svc"]
     },
     {
@@ -86,6 +176,7 @@
       "alternatives": ["Change Data Capture (CDC)", "Dual Write mit Kompensation"],
       "qualityScenario": "Wenn der Kafka-Broker ausfällt, unter normaler Last, dann bleiben Events in der Outbox-DB und werden nach Recovery innerhalb von < 5s published, gemessen an Event-Delivery-Rate = 100%.",
       "relatedNfrs": ["nfr-cons-1"],
+      "relatedFrs": ["fr-02", "fr-03"],
       "relatedElements": ["cnt-reservation-svc", "cnt-outbox-relay", "cnt-kafka"]
     },
     {
@@ -97,6 +188,7 @@
       "alternatives": ["Client-seitige Deduplication"],
       "qualityScenario": "Wenn ein Client denselben Request doppelt sendet (Retry), unter Netzwerk-Instabilität, dann wird die Reservierung nur einmal ausgeführt und das Duplikat gibt die bestehende Reservierung zurück, gemessen an Duplicate-Processing-Rate = 0%.",
       "relatedNfrs": ["nfr-cons-1"],
+      "relatedFrs": ["fr-02"],
       "relatedElements": ["cnt-reservation-svc"]
     },
     {
@@ -108,6 +200,7 @@
       "alternatives": ["Delayed Message Queue", "DB-based TTL"],
       "qualityScenario": "Wenn ein Kunde nicht innerhalb von 8 Minuten bezahlt, unter normaler Last, dann wird der Sitz automatisch innerhalb von max. 10s nach Ablauf freigegeben, gemessen an Zombie-Hold-Rate = 0 nach 8min+10s.",
       "relatedNfrs": ["nfr-perf-1", "nfr-cons-1"],
+      "relatedFrs": ["fr-04"],
       "relatedElements": ["cnt-redis", "cnt-scheduler-svc", "cnt-seats-db"]
     },
     {
@@ -220,6 +313,7 @@
         "tags": ["read-path"],
         "why": "Separater Read-Path für horizontale Skalierung bei Lastspitzen",
         "relatedDecisions": ["dd-5"],
+        "relatedFrs": ["fr-01"],
         "position": { "zone": "center", "row": 1, "col": 0 }
       },
       {
@@ -246,6 +340,7 @@
         "pattern": "Unit-of-Work: DB + Outbox + Audit in einer Transaktion",
         "codeSnippets": ["schema-seats", "sql-reserve", "sql-book", "sql-release"],
         "relatedDecisions": ["dd-1", "dd-2", "dd-3"],
+        "relatedFrs": ["fr-02", "fr-04"],
         "position": { "zone": "center", "row": 1, "col": 1 }
       },
       {
@@ -256,6 +351,7 @@
         "technology": "Node.js",
         "why": "Separater Bounded Context für Order-Lifecycle und Payment-Integration",
         "relatedDecisions": ["dd-1"],
+        "relatedFrs": ["fr-03"],
         "position": { "zone": "center", "row": 1, "col": 2 }
       },
       {
@@ -275,6 +371,7 @@
         "description": "Ticket erstellen (orderId, eventId, seatId, qrCode)",
         "technology": "Node.js",
         "why": "Entkoppelter Versand, damit Payment-Flow nicht blockiert",
+        "relatedFrs": ["fr-03"],
         "position": { "zone": "center", "row": 2, "col": 2.5 }
       },
       {
@@ -295,6 +392,7 @@
         "why": "Garantierte Freigabe abgelaufener Reservierungen (NFR Consistency)",
         "pattern": "Polling mit SKIP LOCKED für Concurrent-Safety",
         "relatedDecisions": ["dd-4"],
+        "relatedFrs": ["fr-04"],
         "position": { "zone": "center", "row": 3, "col": 0 }
       },
       {
