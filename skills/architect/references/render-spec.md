@@ -78,7 +78,7 @@ const C4 = {
           name,          // string — display name (max 30 chars)
           desc,          // string — description
           tech,          // string? — technology
-          drillDown,     // string? — "container" or "component:<container-id>"
+          drillDown,     // string? — "container:<system-id>" or "component:<container-id>". Legacy bare "container" maps to first view.
           why,           // string? — why does this element exist?
           pattern,       // string? — architectural pattern implemented
           relatedDecisions, // string[]? — decision IDs
@@ -107,7 +107,10 @@ const C4 = {
         }
       ]
     },
-    container: { /* same structure as context */ },
+    containers: {
+      // keyed by system ID — one entry per decomposed system
+      "<system-id>": { /* same structure: elements, relationships, groups */ }
+    },
     components: {
       // keyed by container ID — one entry per decomposed container
       "<container-id>": { /* same structure: elements, relationships, groups */ }
@@ -237,19 +240,28 @@ The rendering engine transforms `architecture.json` fields to the C4 JS object:
 | cache_detail | #FFE0B2 | #FFCC80 | #1A1A1A |
 | broker_detail | #FFE0B2 | #FFCC80 | #1A1A1A |
 
-### UI Chrome
-| Element | Color |
-|---|---|
-| Canvas background | #FFFFFF |
-| Arrow lines | #555555 |
-| Arrow label bg | #FFFFFF (92% opacity), #ddd 0.5px stroke |
-| Nav bar background | #FAFAFA |
-| Tab active | #1168BD text #FFFFFF |
-| Tab inactive | #F5F5F5 text #333333 |
-| NFR panel bg | #FFF9E6, border #F0E0A0 |
-| Tooltip bg | #333333, text #FFFFFF |
-| Arrow tooltip bg | #2A2A2A, max-width 360px |
-| Group boundary | Element color at 5% fill, 30% stroke, dashed |
+### UI Chrome (Dark Mode Default)
+
+All UI chrome colors use CSS custom properties (`var(--name)`) for seamless dark/light switching. Dark mode is the default; light mode activates via `data-theme="light"` on `<html>`.
+
+| Element | Dark Mode | Light Mode |
+|---|---|---|
+| Canvas background | #0d1117 | #FFFFFF |
+| Arrow lines | #8b949e (via `--arrow-color`) | #555555 |
+| Arrow label bg | rgba(13,17,23,0.88) | rgba(255,255,255,0.92) |
+| Nav bar | Glass: rgba(13,17,23,0.82) + blur(16px) | Glass: rgba(250,250,250,0.82) + blur(16px) |
+| Tab active | #1f6feb + glow shadow | #1168BD |
+| Tab inactive | rgba(255,255,255,0.06) | #F5F5F5 |
+| Panel bg | Glass: rgba(22,27,34,0.92) + blur(16px) | #FFF9E6 |
+| Tooltip | Glass: rgba(30,33,40,0.95) + blur(12px) | rgba(51,51,51,0.95) |
+| Legend | Glass: rgba(13,17,23,0.8) + blur(12px) | rgba(255,255,255,0.9) |
+| Group boundary | Element color at 5% fill, 30% stroke, dashed | Same |
+
+### Theme Toggle
+- Button in nav bar (moon icon `&#9790;`)
+- Calls `toggleTheme()` which toggles `data-theme` between `dark` and `light`
+- Preference persisted via `localStorage('c4-theme')`
+- Arrows and marker re-render on toggle to pick up new colors
 
 ### Semantic Rules
 - **External = Gray** (#999999) — always
@@ -342,22 +354,25 @@ This avoids arrows going through elements and creates clean connections.
 ### Arrow Composition
 Each arrow consists of:
 1. **Path** — straight line from source edge to target edge
-   - `stroke: #555`, `stroke-width: 1.5`
-   - `marker-end: url(#arrow-marker)` for arrowhead
+   - `stroke-width: 1.5`, color via CSS class `.arrow-line { stroke: var(--arrow-color) }`
+   - `marker-end: url(#af)` for arrowhead (color via CSS `#af polygon { fill: var(--arrow-color) }`)
    - If `async: true`: `stroke-dasharray: 8,4` (dashed)
-2. **Label background** — white rect (92% opacity) at midpoint
+2. **Label background** — rect at midpoint, color via CSS class `.arrow-label-bg { fill: var(--arrow-label-bg) }`
    - Width calculated from label text length: `label.length * 5.5 + 8`
    - Height: 16px, rx: 3
-   - Thin border: `stroke: #ddd, stroke-width: 0.5`
-3. **Label text** — centered on background rect
+   - Border via CSS: `stroke: var(--arrow-label-border), stroke-width: 0.5`
+3. **Label text** — centered on background rect, color via CSS `.arrow-label-text { fill: var(--arrow-label-text) }`
+
+**Important:** Arrow line, label background, and label text have NO hardcoded color attributes in the SVG markup. All colors are controlled via CSS custom properties for theme support.
 
 ### Arrowhead Marker
 ```svg
 <marker id="af" viewBox="0 0 10 10" refX="10" refY="5"
         markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-  <polygon points="0,0 10,5 0,10" fill="#555"/>
+  <polygon points="0,0 10,5 0,10"/>
 </marker>
 ```
+Fill is controlled by CSS: `#af polygon { fill: var(--arrow-color); }` — no hardcoded `fill` attribute.
 
 ### Re-rendering
 Arrows are **completely re-rendered** on every drag move. This is fast enough because:
@@ -423,7 +438,10 @@ Zone BOTTOM:  External systems spread across bottom
 ```
 Spacing: ~200px between persons, ~180px from system to externals
 
-### Container Level (viewBox ~1500x1100)
+### Container Level (viewBox ~1500x1100, per system)
+
+Each system with `drillDown: "container:<system-id>"` gets its own SVG canvas (`svg#svg-container-<system-id>`). The tab label shows the system name.
+
 ```
 Row 0 (y~30):    Gateway center, External PSP right
 Row 1 (y~220):   Core services spread horizontally (150px+ gaps)
@@ -460,12 +478,16 @@ Grid layout: 3 columns, 24px gaps. Card dimensions are **auto-calculated** from 
 
 The complete CSS is defined in `references/engine.js.md` → "CSS to Include" section. Key design principles:
 
+- **Theming:** All colors use CSS custom properties (`var(--name)`). Dark mode is default (`data-theme="dark"` on `<html>`). Light mode via `data-theme="light"`.
 - **Layout:** `body` is a flex column; `.canvas-area` fills remaining space with auto overflow
+- **Glassmorphism:** Nav bar, requirements panel, tooltips, and legend use `backdrop-filter: blur()` + semi-transparent backgrounds
 - **SVG visibility:** Only `svg.active` is displayed; tab switching toggles this class
 - **Drag feedback:** `.c4-element.dragging` gets opacity 0.85 + drop-shadow
-- **Requirements Panel:** Fixed right sidebar 360px, background #FFF9E6, collapsible via `.collapsed`, contains FRs + NFRs + DDs
-- **Code Overlay:** Full-screen modal, dark theme #1E1E2E, Catppuccin Mocha syntax colors
-- **Print CSS:** Hides chrome, shows all SVGs, NFR panel becomes static
+- **Arrow colors:** Controlled entirely via CSS classes (`.arrow-line`, `.arrow-label-bg`, `.arrow-label-text`) — no hardcoded colors in SVG markup
+- **Requirements Panel:** Fixed right sidebar 360px, glass background, collapsible via `.collapsed`, contains FRs + NFRs + DDs
+- **Code Overlay:** Full-screen modal with backdrop blur, dark theme #1E1E2E, Catppuccin Mocha syntax colors
+- **Transitions:** Theme changes, panel open/close, and hover states use smooth CSS transitions (0.2-0.35s)
+- **Print CSS:** Hides chrome, shows all SVGs, NFR panel becomes static, forces light theme
 
 ### Element Tooltip (Rich)
 - Dark background (#333), white text, max-width 320px
@@ -575,6 +597,7 @@ Color mapping (Catppuccin Mocha):
 | Hover design decision (panel) | Highlight related elements (gold dashed stroke) |
 | Click code card (Code level) | Open code overlay |
 | Press Escape | Close code overlay |
+| Click theme toggle (moon icon) | Switch dark/light mode, persists via localStorage |
 | Breadcrumb click | Navigate back to level |
 | Tab (keyboard) | Focus next element in current SVG |
 | Enter/Space on focused element | Show tooltip (same as hover) |

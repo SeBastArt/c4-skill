@@ -4,13 +4,15 @@
 
 ```json
 {
-  "version": "2.1",
+  "version": "2.2",
   "project": { ... },
   "functionalRequirements": [ ... ],
   "nfrs": [ ... ],
   "designDecisions": [ ... ],
   "context": { "elements": [], "relationships": [], "groups": [] },
-  "container": { "elements": [], "relationships": [], "groups": [] },
+  "containers": {
+    "<system-id>": { "elements": [], "relationships": [], "groups": [] }
+  },
   "components": {
     "<container-id>": { "elements": [], "relationships": [], "groups": [] }
   },
@@ -24,6 +26,15 @@ Falls ein `"component"` (Singular) Objekt existiert, wird es automatisch migrier
 1. Finde den Container mit `drillDown: "component"` im Container-Level
 2. Verschiebe das `component`-Objekt unter `components["<container-id>"]`
 3. Entferne das alte `component`-Feld
+
+### Migration von v2.1 → v2.2
+
+Falls ein `"container"` (Singular) Objekt existiert, wird es automatisch migriert:
+1. Finde das `system`-Element im Context-Level mit `drillDown: "container"`
+2. Erstelle `"containers": { "<system-id>": <old-container-data> }` wobei `<system-id>` die ID dieses System-Elements ist
+3. Falls kein Element mit `drillDown: "container"` gefunden wird, verwende den Schlüssel `"_default"`
+4. Entferne das alte `container`-Feld
+5. Aktualisiere `version` auf `"2.2"`
 
 ## Project
 
@@ -97,7 +108,7 @@ Falls ein `"component"` (Singular) Objekt existiert, wird es automatisch migrier
 |---|---|
 | `person` | Human actor internal to the organization |
 | `external_person` | Human actor outside the organization |
-| `system` | The main system being described |
+| `system` | A system being described (one or more allowed) |
 | `external_system` | Systems outside the boundary |
 
 ### Container Level Element Types
@@ -139,7 +150,7 @@ Falls ein `"component"` (Singular) Objekt existiert, wird es automatisch migrier
   "name": "string (required) — max 30 characters",
   "description": "string (required) — what does this element do?",
   "technology": "string — tech stack (e.g., 'Node.js / Express', 'PostgreSQL 15', 'Redis 7')",
-  "drillDown": "string — target level to navigate to on click ('container', 'component:<container-id>')",
+  "drillDown": "string — target level: 'container:<system-id>' (system→containers), 'component:<container-id>' (container→components). Legacy: bare 'container' redirects to first container view.",
   "relatedDecisions": ["string — decision IDs"],
   "relatedFrs": ["string — functional requirement IDs this element implements"],
   "why": "string — WHY does this element exist? Which NFR or business need drives it?",
@@ -280,13 +291,15 @@ Groups are visual containers that cluster related elements. They render as a lab
 
 1. All element IDs must be unique across ALL levels
 2. All relationship `from`/`to` must reference existing element IDs within the same level
-3. All `drillDown` targets must be valid: `"container"` or `"component:<container-id>"` where `<container-id>` exists in `components`
+3. All `drillDown` targets must be valid: `"container:<system-id>"` where `<system-id>` exists as a key in `containers`, or `"component:<container-id>"` where `<container-id>` exists as a key in `components`
 4. All `relatedNfrs` in decisions must reference existing NFR IDs
 5. All `relatedElements` in decisions must reference existing element IDs
 6. No self-referencing relationships (from === to)
-7. Every key in `components` must reference an existing container-level element ID
+7. Every key in `components` must reference an existing container-level element ID; every key in `containers` must reference an existing context-level system element ID (or `_default` for backward compat)
 8. Every container with `drillDown` starting with `"component"` must have a corresponding entry in `components`
 9. Every code snippet `parentElement` must reference an existing element ID
 10. All `relatedFrs` in decisions must reference existing FR IDs
 11. All `relatedFrs` in elements must reference existing FR IDs
 12. Every FR `actor` must reference an existing context-level `person` or `external_person` element
+13. Every key in `containers` should reference an existing context-level `system` element ID (or be `_default` for backward compat)
+14. Every system element with `drillDown` starting with `"container"` must have a corresponding entry in `containers`

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="de" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -15,18 +15,19 @@
     <span class="breadcrumb" aria-label="Breadcrumb"><span>Context</span></span>
     <div class="tabs" role="tablist">
       <button class="tab active" role="tab" aria-selected="true" data-level="context" onclick="switchLevel('context')">Context</button>
-      <button class="tab" role="tab" aria-selected="false" data-level="container" onclick="switchLevel('container')">Container</button>
+      {{CONTAINER_TABS}}
       {{COMPONENT_TABS}}
       <button class="tab" role="tab" aria-selected="false" data-level="code" onclick="switchLevel('code')">Code</button>
     </div>
     <button class="nfr-toggle" onclick="document.querySelector('.nfr-panel').classList.toggle('collapsed')" aria-expanded="true">Requirements</button>
+    <button class="theme-toggle" onclick="toggleTheme()" aria-label="Theme wechseln" title="Dark/Light Mode">&#9790;</button>
   </nav>
 
   <!-- Shared SVG defs — single source for filter + marker, referenced by all diagram SVGs -->
   <svg style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
     <defs>
       <filter id="ds" x="-5%" y="-5%" width="110%" height="115%"><feDropShadow dx="2" dy="2" stdDeviation="3" flood-opacity="0.15"/></filter>
-      <marker id="af" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><polygon points="0,0 10,5 0,10" fill="#555"/></marker>
+      <marker id="af" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><polygon points="0,0 10,5 0,10"/></marker>
     </defs>
   </svg>
 
@@ -37,12 +38,8 @@
       <g class="arrows-layer"></g>
       <g class="elements-layer"></g>
     </svg>
-    <svg id="svg-container" role="img" aria-label="C4 Container-Diagramm: Zeigt deploybare Einheiten" viewBox="0 0 {{CNT_W}} {{CNT_H}}" xmlns="http://www.w3.org/2000/svg">
-      <title>Container Level — Woraus besteht das System?</title>
-      <g class="groups-layer"></g>
-      <g class="arrows-layer"></g>
-      <g class="elements-layer"></g>
-    </svg>
+    <!-- Container SVGs are generated dynamically per system drillDown -->
+    {{CONTAINER_SVGS}}
     <!-- Component SVGs are generated dynamically per container drillDown -->
     {{COMPONENT_SVGS}}
     <svg id="svg-code" role="img" aria-label="C4 Code-Level: Zeigt Code-Snippets und Schemas" viewBox="0 0 {{CODE_W}} {{CODE_H}}" xmlns="http://www.w3.org/2000/svg">

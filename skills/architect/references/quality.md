@@ -21,15 +21,17 @@ Validation levels:
 | S-01 | All element IDs are unique across all levels (context, container, all component views) | Rename duplicate IDs with level prefix (`ctx-`, `cnt-`, `cmp-<container>-`) |
 | S-02 | Every relationship `from` references an existing element in the same level | Remove or fix the relationship |
 | S-03 | Every relationship `to` references an existing element in the same level | Remove or fix the relationship |
-| S-04 | Every `drillDown` value is valid: `"container"` or `"component:<container-id>"` where the container-id exists as a key in `components` | Remove or correct the drillDown |
+| S-04 | Every `drillDown` value is valid: `"container:<system-id>"` where system-id exists in `containers`, or `"component:<container-id>"` where container-id exists in `components`. Legacy `"container"` (bare) is acceptable. | Remove or correct the drillDown |
 | S-05 | Every code snippet `parentElement` references an existing element ID | Fix element reference or remove snippet |
 | S-06 | No self-referencing relationships (`from` !== `to`) | Remove the self-reference |
-| S-07 | Every key in `components` references an existing container-level element ID | Remove the orphaned component view or add the container |
-| S-08 | Version field is `"2.1"` | Update version |
+| S-07 | Every key in `components` references an existing container-level element ID. Every key in `containers` references an existing context-level system element ID (or is `"_default"`). | Remove the orphaned component view or add the container |
+| S-08 | Version field is `"2.2"` | Update version |
 | S-09 | Every relationship has `async` as boolean (not string, not `protocol: "async"`) | Convert `protocol: "async"` to `async: true` |
 | S-10 | Every FR `actor` references an existing context-level `person` or `external_person` element | Fix actor reference |
 | S-11 | Every `relatedFrs` in design decisions references an existing FR ID | Fix FR reference or remove |
 | S-12 | Every `relatedFrs` in elements references an existing FR ID | Fix FR reference or remove |
+| S-13 | Every key in `containers` references an existing context-level system element ID (or is `"_default"`) | Fix key or add system element |
+| S-14 | Every system element with `drillDown` starting with `"container"` must have a corresponding entry in `containers` | Add containers entry or remove drillDown |
 
 ---
 
@@ -38,8 +40,8 @@ Validation levels:
 | Rule | Severity | Check | Fix |
 |---|---|---|---|
 | C-01 | ERROR | Context level has at least one `person` or `external_person` | Add the primary actor |
-| C-02 | ERROR | Context level has exactly one `system` element | Add or deduplicate the main system |
-| C-03 | ERROR | Container level has at least one element | Add containers — decompose the system |
+| C-02 | ERROR | Context level has at least one `system` element | Add at least one main system |
+| C-03 | ERROR | Every `containers` entry has at least one element | Add containers — decompose the system |
 | C-04 | WARNING | At least one container has `drillDown` starting with `"component"` | Add component decomposition for key container |
 | C-05 | WARNING | Every database element has at least one code snippet with matching `parentElement` (schema) | Add schema snippet with `parentElement` referencing the database |
 | C-06 | ERROR | Every relationship has a non-empty `label` | Add a descriptive label |
@@ -52,11 +54,11 @@ Validation levels:
 
 | Rule | Severity | Check | Fix |
 |---|---|---|---|
-| X-01 | WARNING | Every context `person` appears in at least one container-level relationship (directly or via gateway) | Add the missing relationship or remove the person |
+| X-01 | WARNING | Every context `person` appears in at least one container-level relationship across any container view (directly or via gateway) | Add the missing relationship or remove the person |
 | X-02 | WARNING | Every context `external_system` has a corresponding container-level element or relationship | Add the external service container |
 | X-03 | INFO | Every container with `drillDown: "component:..."` has actual component-level elements in `components[containerId]` | Add components or remove drillDown |
 | X-04 | INFO | Container-level relationship directions are reflected at component level | Verify component relationships match |
-| X-05 | WARNING | Every `components` key has a corresponding container with `drillDown: "component:<key>"` | Add drillDown to the container or remove the component view |
+| X-05 | WARNING | Every `components` key has a corresponding container with `drillDown: "component:<key>"`. Every `containers` key should have a corresponding system element with `drillDown: "container:<key>"`. | Add drillDown to the container/system or remove the component/container view |
 
 ---
 

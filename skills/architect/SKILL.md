@@ -16,7 +16,7 @@ This skill creates **interactive C4 architecture diagrams** as self-contained HT
 **Load references on-demand per phase — NOT all at once:**
 
 ### Tier 1 — Always (minimal baseline):
-- `references/json-schema.md` — Data model definition (v2.1, multi-component, FRs + NFRs)
+- `references/json-schema.md` — Data model definition (v2.2, multi-container, multi-component, FRs + NFRs)
 - `references/quality.md` — Validation rules (42 rules, 7 categories)
 
 ### Tier 2 — Phase 3 (NFR collection):
@@ -154,11 +154,12 @@ For each relationship, define:
 - Protocol if known (REST, gRPC, webhook, email)
 
 **Rules:**
-- Maximum 8-10 elements at context level
+- Maximum 8-10 elements at context level. Multiple `system` elements are allowed when modeling a system landscape
 - Every person and external system must have at least one relationship
 - The main system is always present
 - No internal details — this is the 30,000-foot view
 - Every async relationship MUST have a payload description
+- Each system element that should be decomposed gets `drillDown: "container:<system-id>"` pointing to its container view
 
 **Output:** Present the context diagram as a structured list for confirmation.
 
@@ -166,7 +167,7 @@ For each relationship, define:
 
 ### Phase 5: Container Level (C4 Level 2)
 
-**Goal:** Decompose the main system into deployable containers.
+**Goal:** Decompose each system into its deployable containers. Each system gets its own container view.
 
 Guide the decomposition by asking about:
 1. **API layer** — How do clients reach the system? (API Gateway, Load Balancer, CDN)
@@ -174,6 +175,7 @@ Guide the decomposition by asking about:
 3. **Data stores** — What databases, caches, and queues are needed?
 4. **Async infrastructure** — Message brokers, schedulers, background workers?
 5. **External integrations** — How does each external system connect?
+6. If multiple systems exist in C1, ask: **Which systems should be decomposed?** Create a separate container view per system.
 
 For each container, capture:
 - Name, type, technology choice
@@ -214,6 +216,7 @@ Für jeden eingesetzten Pattern:
 - Groups help visual readability — use 3-5 groups
 - Every async relationship MUST have a payload and a why
 - Every element that implements a pattern MUST document it
+- Each system's containers are stored in `containers["<system-id>"]` — not a single global container level
 
 **Output:** Present the container diagram as a structured list with groups.
 
@@ -316,8 +319,8 @@ Beispiel: "Wenn der Kafka-Broker ausfällt, unter normaler Last, dann bleiben Ev
 
 **Goal:** Assemble everything into `architecture.json` and validate.
 
-1. Build the complete JSON following `references/json-schema.md` (v2.1 format)
-2. Use `components` dictionary (not singular `component`) for component views
+1. Build the complete JSON following `references/json-schema.md` (v2.2 format)
+2. Use `containers` dictionary for container views (one per system) and `components` dictionary for component views
 3. Ensure all IDs use correct prefixes (`ctx-`, `cnt-`, `cmp-<container>-`)
 4. Ensure all relationships use `async: true/false` (boolean, not `protocol: "async"`)
 5. Run ALL validation rules from `references/quality.md` (42 rules, 7 categories)
@@ -344,14 +347,14 @@ Beispiel: "Wenn der Kafka-Broker ausfällt, unter normaler Last, dann bleiben Ev
 4. Build the `C4` JavaScript data object from architecture.json:
    - `C4.colors` — type-to-color mapping (from render-spec color palette)
    - `C4.levels.context` — elements with ALL fields (see render-spec JS data structure)
-   - `C4.levels.container` — same structure
+   - `C4.levels.containers["<system-id>"]` — one entry per system, same structure
    - `C4.levels.components["<container-id>"]` — one entry per decomposed container, same structure
    - `C4.code.snippets` — code cards with `{id, title, lang, code, parentElement, annotations}`
    - `C4.frs` — FR data for the panel
    - `C4.nfrs` — NFR data for the panel
    - `C4.designDecisions` — decision data for the panel and Why-Layer
 5. Calculate initial element positions using the layout algorithm from json-schema.md
-6. Generate one `<svg id="svg-component-<container-id>">` per component view (NO local `<defs>` — shared defs SVG provides filter `#ds` and marker `#af`)
+6. Generate one `<svg id="svg-container-<system-id>">` per container view and one `<svg id="svg-component-<container-id>">` per component view (NO local `<defs>` — shared defs SVG provides filter `#ds` and marker `#af`)
 7. Generate component tabs dynamically (one per component view, labeled with container name)
 8. Embed the rendering engine from `references/engine.js.md` — do NOT rewrite, copy the reference code
 9. Replace ALL template placeholders:
@@ -360,14 +363,17 @@ Beispiel: "Wenn der Kafka-Broker ausfällt, unter normaler Last, dann bleiben Ev
    - `{{ENGINE_JS}}` — full JS from engine.js.md "Complete Engine Code" section
    - `{{C4_DATA_OBJECT}}` — the C4 JavaScript data object
    - `{{CTX_W}}` / `{{CTX_H}}` — context viewBox (default: 1100 x 700)
-   - `{{CNT_W}}` / `{{CNT_H}}` — container viewBox (default: 1500 x 1100)
    - `{{CODE_W}}` / `{{CODE_H}}` — code viewBox (auto-calculated, default: 1100 x 600)
+   - `{{CONTAINER_SVGS}}` — one `<svg>` per container view (one per system, dynamic viewBox)
+   - `{{CONTAINER_TABS}}` — one `<button>` per container view
    - `{{COMPONENT_SVGS}}` — one `<svg>` per component view (NO local defs)
    - `{{COMPONENT_TABS}}` — one `<button>` per component view
    - `{{FR_PANEL_HTML}}` — FR items HTML
    - `{{NFR_PANEL_HTML}}` — NFR items HTML
    - `{{DESIGN_DECISIONS_HTML}}` — DD items HTML with `data-elements` attribute
 10. Write the single HTML file to disk
+
+**Backward compatibility:** If only one system exists, a bare `container` drillDown (without system-id) is acceptable.
 
 **Key rendering functions:**
 - `getConnectionPoint(element, targetCenter)` — finds nearest edge intersection for arrow endpoints
