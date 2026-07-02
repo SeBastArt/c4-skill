@@ -1,13 +1,9 @@
+---
+name: c4
+description: Use when the user wants to create, design, model, visualize, validate, amend, or export a software architecture or C4 diagram — including rendering or checking an existing architecture.json. Triggers include "C4", "Architektur", "architecture", "Systemarchitektur", "system design", "Architekturdiagramm", architecture workshop, NFR/FR modeling, Structurizr export.
+---
+
 # C4 Architecture Skill
-
-## Trigger
-
-Activate when the user asks to:
-- Create, design, or model a software architecture
-- Generate C4 diagrams or architecture visualizations
-- Render an existing architecture.json to HTML
-- Validate or review an architecture model
-- Keywords: "C4", "Architektur", "architecture", "system design", "Systemarchitektur"
 
 ## Overview
 
@@ -17,7 +13,7 @@ This skill creates **interactive C4 architecture diagrams** as self-contained HT
 
 ### Tier 1 — Always (minimal baseline):
 - `references/json-schema.md` — Data model definition (v2.2, multi-container, multi-component, FRs + NFRs)
-- `references/quality.md` — Validation rules (42 rules, 7 categories)
+- `references/quality.md` — Validation rules (7 categories S/C/X/T/W/F/V — rule count and details there)
 
 ### Tier 2 — Phase 3 (NFR collection):
 - `references/pattern-catalog.md` — Navigator: NFR→Pattern Quick-Reference, Pattern-Stacks
@@ -323,14 +319,14 @@ Beispiel: "Wenn der Kafka-Broker ausfällt, unter normaler Last, dann bleiben Ev
 2. Use `containers` dictionary for container views (one per system) and `components` dictionary for component views
 3. Ensure all IDs use correct prefixes (`ctx-`, `cnt-`, `cmp-<container>-`)
 4. Ensure all relationships use `async: true/false` (boolean, not `protocol: "async"`)
-5. Run ALL validation rules from `references/quality.md` (42 rules, 7 categories)
+5. Run ALL validation rules from `references/quality.md` (all 7 categories)
 6. Fix any errors, warn about warnings
 7. Write the validated `architecture.json` to disk
 
 **Validation is not optional.** Every architecture must pass at minimum:
-- All structural integrity rules (S-01 to S-12) — zero errors
-- All completeness rules (C-01 to C-08) — zero errors, warnings acceptable
-- All cross-level consistency rules (X-01 to X-05) — warnings acceptable
+- All structural integrity rules (Category S) — zero errors
+- All completeness rules (Category C) — zero errors, warnings acceptable
+- All cross-level consistency rules (Category X) — warnings acceptable
 
 ---
 
@@ -349,10 +345,10 @@ Beispiel: "Wenn der Kafka-Broker ausfällt, unter normaler Last, dann bleiben Ev
    - `C4.levels.context` — elements with ALL fields (see render-spec JS data structure)
    - `C4.levels.containers["<system-id>"]` — one entry per system, same structure
    - `C4.levels.components["<container-id>"]` — one entry per decomposed container, same structure
-   - `C4.code.snippets` — code cards with `{id, title, lang, code, parentElement, annotations}`
+   - `C4.code.snippets` — code cards with `{id, title, lang, code, parentElement, annotations}` (map the architecture.json field `language` → `lang`; the engine reads `sn.lang`)
    - `C4.frs` — FR data for the panel
    - `C4.nfrs` — NFR data for the panel
-   - `C4.designDecisions` — decision data for the panel and Why-Layer
+   - `C4.designDecisions` — decision data for the panel (hover highlights related elements via `data-elements`)
 5. Calculate initial element positions using the layout algorithm from json-schema.md
 6. Generate one `<svg id="svg-container-<system-id>">` per container view and one `<svg id="svg-component-<container-id>">` per component view (NO local `<defs>` — shared defs SVG provides filter `#ds` and marker `#af`)
 7. Generate component tabs dynamically (one per component view, labeled with container name)

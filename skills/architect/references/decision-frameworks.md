@@ -233,7 +233,7 @@ Regelmäßig (monatlich) bewerten:
 Pre-Mortem-Ergebnisse werden zu:
 - **Design Decisions** (NFR-adressierend)
 - **Quality Scenarios** (testbare Metriken)
-- **Risk-Annotations** auf Elementen (im Why-Layer sichtbar)
+- **Risk-Annotations** auf Elementen (via `why`-Feld im Element-Tooltip sichtbar)
 
 ---
 

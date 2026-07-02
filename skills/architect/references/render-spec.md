@@ -83,7 +83,6 @@ const C4 = {
           pattern,       // string? — architectural pattern implemented
           relatedDecisions, // string[]? — decision IDs
           relatedFrs,    // string[]? — functional requirement IDs
-          codeSnippets,  // string[]? — snippet IDs
           x, y, w, h    // number — position and dimensions (mutable)
         }
       ],
@@ -93,6 +92,7 @@ const C4 = {
           to,            // string — target element ID
           label,         // string — short label on the line (max 40 chars)
           async,         // boolean — if true, renders dashed line
+          bidirectional, // boolean? — if true, arrowheads on both ends (marker-start + marker-end)
           detail,        // string? — longer description for tooltip
           payload,       // string? — event/message structure for async arrows
           why,           // string? — why does this communication exist?
@@ -252,7 +252,7 @@ All UI chrome colors use CSS custom properties (`var(--name)`) for seamless dark
 | Nav bar | Glass: rgba(13,17,23,0.82) + blur(16px) | Glass: rgba(250,250,250,0.82) + blur(16px) |
 | Tab active | #1f6feb + glow shadow | #1168BD |
 | Tab inactive | rgba(255,255,255,0.06) | #F5F5F5 |
-| Panel bg | Glass: rgba(22,27,34,0.92) + blur(16px) | #FFF9E6 |
+| Panel bg | Glass: rgba(22,27,34,0.78) + blur(16px) via `--bg-panel` | #FFF9E6 |
 | Tooltip | Glass: rgba(30,33,40,0.95) + blur(12px) | rgba(51,51,51,0.95) |
 | Legend | Glass: rgba(13,17,23,0.8) + blur(12px) | rgba(255,255,255,0.9) |
 | Group boundary | Element color at 5% fill, 30% stroke, dashed | Same |
@@ -423,8 +423,8 @@ Groups **auto-resize** when elements are dragged.
 - Use `svg.createSVGPoint()` + `getScreenCTM().inverse()` to convert mouse coordinates to SVG coordinates
 - Update the **data object** (not just the DOM) so arrows recalculate correctly
 - Elements layer is NOT re-rendered during drag — only the transform attribute changes
-- Arrows layer, groups layer, and **why-layer** ARE re-rendered on every move
-- All three must be called in the mousemove handler: `renderArrows()`, `renderGroups()`, `renderWhyAnnotations()` (if active)
+- Arrows layer and groups layer ARE re-rendered on every move
+- Both must be called in the mousemove handler: `renderArrows()`, `renderGroups()`
 
 ---
 
@@ -515,11 +515,11 @@ Implementation: Arrow labels and paths get `data-rel-index` attribute. On hover,
 
 ### Legend
 - Fixed bottom-left
-- Shows line styles: solid (sync), dashed (async)
+- Shows line styles: solid (sync), dashed (async), double-arrowhead (bidirektional)
 
 ### Drag Hint
 - Fixed bottom-center
-- Shows "Elemente per Drag & Drop verschieben | Tasten 1-4"
+- Shows "Drag: Verschieben | Scroll: Zoom | Mittelklick: Pan | Ctrl+Z: Undo | R: Reset Zoom | Shift+R: Reset Positionen"
 - Semi-transparent
 
 ### Accessibility
@@ -551,13 +551,12 @@ Implementation: Arrow labels and paths get `data-rel-index` attribute. On hover,
 ```css
 @media print {
   .nav-bar, .legend, .drag-hint, .tooltip, .code-overlay,
-  .nfr-toggle, .why-toggle, .skip-link { display: none; }
+  .nfr-toggle, .theme-toggle, .skip-link { display: none; }
   .canvas-area { overflow: visible; padding: 0; }
   .canvas-area svg { display: block !important; page-break-inside: avoid; margin-bottom: 20px; }
-  .canvas-area svg:not(.active) { display: block !important; }
   .nfr-panel { position: static; transform: none; width: 100%;
-    page-break-before: always; border: 1px solid #ccc; }
-  body { height: auto; overflow: visible; }
+    page-break-before: always; border: 1px solid #ccc; background: #fff; backdrop-filter: none; }
+  body { height: auto; overflow: visible; background: #fff; color: #000; }
 }
 ```
 

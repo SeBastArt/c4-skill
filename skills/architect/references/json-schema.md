@@ -180,7 +180,7 @@ The `position` field guides initial layout placement. The renderer translates th
 - `zone: "center"` — Core services, business logic
 - `zone: "bottom"` — Data stores, external systems, infrastructure
 
-`row` and `col` are relative positions within a zone (0-based).
+`row` and `col` are relative positions within a zone (0-based; fractional values like `1.5` and negative values are allowed for fine-tuning — the renderer uses them as spacing multipliers).
 
 ### Layout Algorithm (Position Hints → Pixel Coordinates)
 

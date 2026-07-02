@@ -2,7 +2,7 @@
 
 ## Overview
 
-42 rules in 7 categories. Each rule has a severity:
+49 rules in 7 categories (S:14, C:8, X:5, T:4, W:5, F:5, V:8). Each rule has a severity:
 - **ERROR** — Must fix. Architecture is broken without it.
 - **WARNING** — Should fix. Quality is degraded.
 - **INFO** — Nice to have. Improves polish.
@@ -24,7 +24,7 @@ Validation levels:
 | S-04 | Every `drillDown` value is valid: `"container:<system-id>"` where system-id exists in `containers`, or `"component:<container-id>"` where container-id exists in `components`. Legacy `"container"` (bare) is acceptable. | Remove or correct the drillDown |
 | S-05 | Every code snippet `parentElement` references an existing element ID | Fix element reference or remove snippet |
 | S-06 | No self-referencing relationships (`from` !== `to`) | Remove the self-reference |
-| S-07 | Every key in `components` references an existing container-level element ID. Every key in `containers` references an existing context-level system element ID (or is `"_default"`). | Remove the orphaned component view or add the container |
+| S-07 | Every key in `components` references an existing container-level element ID (containers-keys → see S-13) | Remove the orphaned component view or add the container |
 | S-08 | Version field is `"2.2"` | Update version |
 | S-09 | Every relationship has `async` as boolean (not string, not `protocol: "async"`) | Convert `protocol: "async"` to `async: true` |
 | S-10 | Every FR `actor` references an existing context-level `person` or `external_person` element | Fix actor reference |
@@ -144,10 +144,10 @@ For these rules, offer to auto-fix:
 - **C-06**: Generate label from element names ("→ calls", "→ reads from")
 - **V-04/V-05**: Truncate with ellipsis or suggest abbreviation
 - **V-06**: Infer technology from element type (database → "PostgreSQL", cache → "Redis")
-- **S-08**: Auto-upgrade version to "2.1"
+- **S-08**: Auto-upgrade version to "2.2"
 - **F-05**: Default to `"must"` if priority is empty
 
-## Migration Auto-Fix (v1.0 / v2.0 → v2.1)
+## Migration Auto-Fix (v1.0 / v2.0 / v2.1 → v2.2)
 
 When validating an older architecture, offer automatic migration:
 1. Rename `"component"` → find container with `drillDown: "component"`, move to `"components": { "<container-id>": ... }`
@@ -155,4 +155,5 @@ When validating an older architecture, offer automatic migration:
 3. Convert `protocol: "async"` → `async: true` on all relationships
 4. Add `ctx-`, `cnt-`, `cmp-` prefixes to IDs if missing (and update all references)
 5. Add empty `"functionalRequirements": []` if missing (v2.0 → v2.1)
-6. Set `version: "2.1"`
+6. Rename top-level `"container"` (singular) → `"containers": { "<system-id>": ... }` and update the system element's `drillDown: "container"` → `"container:<system-id>"` (v2.1 → v2.2)
+7. Set `version: "2.2"`

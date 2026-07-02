@@ -4,11 +4,13 @@ Interactive C4 architecture diagrams as self-contained HTML files — from NFRs 
 
 ## Features
 
-- **9-Phase Workshop**: Scope → NFRs → Context → Container → Component → Code → Decisions → Validate → Render
-- **Self-contained HTML output**: SVG diagrams with drag & drop, zoom/pan, tooltips, drill-down — zero dependencies
-- **Architecture knowledge**: 25+ patterns, 10 paradigms, decision frameworks (ATAM, TARA, ADR)
+- **10-Phase Workshop**: Scope → FRs → NFRs → Context → Container → Component → Code → Decisions → Validate → Render
+- **Self-contained HTML output**: SVG diagrams with drag & drop, zoom/pan, tooltips, drill-down, dark/light theme — zero dependencies
+- **Multi-system support**: One container view per system (`containers` dictionary, v2.2)
+- **Architecture knowledge**: 32 patterns, 10 paradigms, decision frameworks (ADR, Canvas, ATAM, TARA, DCAR, LASR, Risk Storming, Pre-Mortem, Fitness Functions, Scorecards)
+- **Requirements as first-class citizens**: Functional Requirements (MoSCoW + acceptance criteria) and NFRs with measurable metrics, both traceable to elements and decisions
 - **Code annotations**: Every code snippet explains *why* it's architecturally relevant
-- **38 validation rules**: Structural integrity, completeness, cross-level consistency, traceability
+- **49 validation rules in 7 categories**: Structural integrity, completeness, cross-level consistency, NFR/decision traceability, why-traceability, FR traceability, visual quality
 - **6 modes**: Full Workshop, Quick, Render-Only, Validate-Only, Amend, Export (Structurizr DSL)
 
 ## Installation
@@ -73,7 +75,7 @@ A single `.html` file with:
 - **Container diagram** (C4 Level 2): Deployable units with groups
 - **Component diagrams** (C4 Level 3): Internal structure per container
 - **Code level** (C4 Level 4): Annotated code snippets with syntax highlighting
-- **NFR panel**: Non-functional requirements + design decisions with hover highlighting
+- **Requirements panel**: Functional + non-functional requirements and design decisions with hover highlighting
 - **Interactions**: Drag & drop, zoom/pan, drill-down, rich tooltips, keyboard navigation
 
 ## License
