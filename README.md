@@ -41,6 +41,20 @@ cp -r skills/architect .claude/skills/c4
 
 Then use: `/c4` to start the workshop.
 
+### For Development (single source of truth)
+
+Instead of copying, link the skill directory to your clone — changes in the repo are live immediately, no sync step:
+
+```powershell
+# Windows (junction, no admin rights needed)
+New-Item -ItemType Junction -Path "$env:USERPROFILE\.claude\skills\c4" -Target "C:\path\to\c4-skill\skills\architect"
+```
+
+```bash
+# macOS / Linux
+ln -s /path/to/c4-skill/skills/architect ~/.claude/skills/c4
+```
+
 ## Usage
 
 ### Full Workshop
