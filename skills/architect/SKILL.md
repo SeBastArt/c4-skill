@@ -477,8 +477,8 @@ become one analysis step, as in Quick Mode, but every statement must be bound to
    (`architecture.json`, `architecture.html`). Never into `openwiki/`: OpenWiki deletes everything
    there except `INSTRUCTIONS.md` on init.
 7. **Report** — counts per kind (bound/unbound), the unbound list with reasons, and every place
-   where binding evidence changed the model (step 3). Security-relevant observations go to the
-   report only, never into the model.
+   where binding evidence changed the model (step 3). Security-relevant observations never go into the model:
+   record them with skill `security-findings` (local, outside the repository) and name the ids in the report.
 
 ### Phase 9b: Bind Evidence
 
