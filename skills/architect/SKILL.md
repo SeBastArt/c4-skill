@@ -478,7 +478,8 @@ become one analysis step, as in Quick Mode, but every statement must be bound to
    there except `INSTRUCTIONS.md` on init.
 7. **Report** — counts per kind (bound/unbound), the unbound list with reasons, and every place
    where binding evidence changed the model (step 3). Security-relevant observations never go into the model:
-   record them with skill `security-findings` (local, outside the repository) and name the ids in the report.
+   record them with skill `security-findings` where the workspace has it (local, outside the repository),
+   otherwise tell the user directly; name the ids in the report.
 
 ### Phase 9b: Bind Evidence
 
