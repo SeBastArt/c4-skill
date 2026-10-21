@@ -39,8 +39,9 @@ This skill creates **interactive C4 architecture diagrams** as self-contained HT
 ## Output
 
 A single self-contained `.html` file containing:
-- SVG canvases: Context, Container, 1-N Component views (one per decomposed container), Code
+- SVG canvases: Context, Container, 1-N Component views (one per decomposed container), **1-N Sequence views**, Code
 - Tab navigation with breadcrumbs (component tabs show container name)
+- **Sequence diagram(s)** — UML-style interaction flow(s), rendered by default from the primary use case (see Phase 8b)
 - Requirements panel (collapsible right sidebar: FRs, NFRs, Design Decisions)
 - Code snippet overlays (dark theme, Catppuccin Mocha syntax highlighting)
 - Drill-down navigation between levels (double-click)
@@ -311,6 +312,31 @@ Beispiel: "Wenn der Kafka-Broker ausfällt, unter normaler Last, dann bleiben Ev
 
 ---
 
+### Phase 8b: Sequence Diagrams (Interaction Flows) — Standard Output
+
+**Goal:** Capture the runtime interaction as one or more UML-style sequence diagrams. **At least one sequence diagram is standard output** — it shows *how* the pieces collaborate over time, which the static C4 levels cannot. Only skip it for a pure landscape model with no runtime flow.
+
+Derive the **primary sequence** from the most important `must`-priority FR (the core end-to-end path). Add further sequences for important alternative flows or secondary use cases if they add clarity.
+
+For each sequence, capture:
+1. **Title** — What flow does this show? (e.g., "Bestellung aufgeben (Happy Path)")
+2. **Participants** — The lifelines, left→right in call order. Reuse the real element names from the Context/Container levels (actor, gateway, services, data stores, external systems). Keep names short (≤ ~18 chars).
+3. **Messages** — Ordered top→down. For each: `from`, `to`, `label` (what is sent), and `type`:
+   - `sync` — a call (solid arrow). Default.
+   - `return` — a response (dashed arrow).
+   - `self` — internal processing on one participant (self-loop).
+4. **Fragments** (optional) — Combined fragments over a contiguous message range: `alt` (alternative/branch), `par` (parallel), `loop`, `opt` (optional). Give each a `condition` guard and the participant span (`from`/`to`) plus the enclosed message index range (`startMessage`/`endMessage`, 0-based).
+
+**Rules:**
+- Model the same protocol semantics as the C4 relationships (sync vs. async/return).
+- Prefer 1 clear primary sequence over many noisy ones. Typical: 1-3 sequences.
+- Every participant should send or receive at least one message.
+- Reflect the architecture's cross-cutting concerns where relevant (e.g., an auth/authorization hop, graceful-degradation branches) — these make the flow honest.
+
+**Output:** Present each sequence as an ordered participant list + numbered message list (with fragments) for confirmation. This maps 1:1 to the `sequences` array in `architecture.json` (see `references/json-schema.md`).
+
+---
+
 ### Phase 9: Assembly & Validation
 
 **Goal:** Assemble everything into `architecture.json` and validate.
@@ -319,7 +345,8 @@ Beispiel: "Wenn der Kafka-Broker ausfällt, unter normaler Last, dann bleiben Ev
 2. Use `containers` dictionary for container views (one per system) and `components` dictionary for component views
 3. Ensure all IDs use correct prefixes (`ctx-`, `cnt-`, `cmp-<container>-`)
 4. Ensure all relationships use `async: true/false` (boolean, not `protocol: "async"`)
-5. Run ALL validation rules from `references/quality.md` (all 7 categories)
+5. Include the `sequences` array (≥ 1 sequence — standard output). Validate that every message/fragment `from`/`to` references a participant in the same sequence and that fragment message indices are in range.
+6. Run ALL validation rules from `references/quality.md` (all 7 categories)
 6. Fix any errors, warn about warnings
 7. Write the validated `architecture.json` to disk
 
@@ -349,9 +376,11 @@ Beispiel: "Wenn der Kafka-Broker ausfällt, unter normaler Last, dann bleiben Ev
    - `C4.frs` — FR data for the panel
    - `C4.nfrs` — NFR data for the panel
    - `C4.designDecisions` — decision data for the panel (hover highlights related elements via `data-elements`)
+   - `C4.sequences` — sequence data (`{id, title, tabLabel?, note?, participants[], messages[], fragments[]}`); rendered by `renderSequence()`
 5. Calculate initial element positions using the layout algorithm from json-schema.md
 6. Generate one `<svg id="svg-container-<system-id>">` per container view and one `<svg id="svg-component-<container-id>">` per component view (NO local `<defs>` — shared defs SVG provides filter `#ds` and marker `#af`)
 7. Generate component tabs dynamically (one per component view, labeled with container name)
+7b. Generate one **empty** `<svg id="svg-sequence-<id>">` shell per sequence and one sequence tab (`data-level="sequence:<id>"`, label = `tabLabel`/`title`) — the engine's `renderSequence()` fills the shell and sets its viewBox
 8. Embed the rendering engine from `references/engine.js.md` — do NOT rewrite, copy the reference code
 9. Replace ALL template placeholders:
    - `{{PROJECT_NAME}}` — from `project.name`
@@ -364,6 +393,8 @@ Beispiel: "Wenn der Kafka-Broker ausfällt, unter normaler Last, dann bleiben Ev
    - `{{CONTAINER_TABS}}` — one `<button>` per container view
    - `{{COMPONENT_SVGS}}` — one `<svg>` per component view (NO local defs)
    - `{{COMPONENT_TABS}}` — one `<button>` per component view
+   - `{{SEQUENCE_SVGS}}` — one **empty** `<svg id="svg-sequence-<id>">` shell per sequence
+   - `{{SEQUENCE_TABS}}` — one `<button data-level="sequence:<id>">` per sequence
    - `{{FR_PANEL_HTML}}` — FR items HTML
    - `{{NFR_PANEL_HTML}}` — NFR items HTML
    - `{{DESIGN_DECISIONS_HTML}}` — DD items HTML with `data-elements` attribute
@@ -376,6 +407,7 @@ Beispiel: "Wenn der Kafka-Broker ausfällt, unter normaler Last, dann bleiben Ev
 - `renderArrows(svgId, levelData)` — clears and re-renders all arrows from relationship data
 - `renderGroups(svgId, levelData)` — auto-calculates group bounding boxes from member elements
 - `svgShape(element, colors)` — returns SVG markup for element type (person, database, gateway, etc.)
+- `renderSequence(seqId)` — renders a UML-style sequence diagram from `C4.sequences` into `svg-sequence-<id>` (deterministic layout, sets viewBox)
 - `highlightCode(code, lang)` — regex-based syntax highlighting
 
 **Quality checks before delivery:** See full checklist in `references/render-spec.md` → "Quality Checklist". All items must pass.
@@ -384,15 +416,16 @@ Beispiel: "Wenn der Kafka-Broker ausfällt, unter normaler Last, dann bleiben Ev
 
 ## Quick Mode
 
-If the user says "quick" or provides a very detailed specification upfront, compress Phases 1-8 into a single analysis step. Still validate (Phase 9) and render (Phase 10) with full rigor.
+If the user says "quick" or provides a very detailed specification upfront, compress Phases 1-8b into a single analysis step (still author at least one sequence). Still validate (Phase 9) and render (Phase 10) with full rigor.
 
 ## Render-Only Mode
 
 If an `architecture.json` already exists:
-- Skip Phases 1-8
+- Skip Phases 1-8b
 - Load the JSON
 - Validate (Phase 9)
 - Render (Phase 10)
+- If the JSON has **no `sequences`**, still render the other levels, but flag it and offer to author a primary sequence (Phase 8b) from the existing FRs/relationships — a sequence diagram is standard output.
 
 Trigger: User says "render", "visualize", or provides a path to an existing architecture.json.
 
@@ -418,6 +451,7 @@ If the user wants to modify an existing architecture:
    - New FR → Which elements implement it? Is priority set?
    - New NFR → Is there a design decision addressing it?
    - Changed element → Do related decisions/snippets need updating?
+   - New/changed runtime flow → Does a sequence diagram need adding or updating?
 6. **Validate** (Phase 9) — Run full validation
 7. **Diff Summary** — Present a before/after diff of changed elements
 8. **Render** (Phase 10) — Re-render the updated HTML

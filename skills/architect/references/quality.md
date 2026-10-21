@@ -32,6 +32,9 @@ Validation levels:
 | S-12 | Every `relatedFrs` in elements references an existing FR ID | Fix FR reference or remove |
 | S-13 | Every key in `containers` references an existing context-level system element ID (or is `"_default"`) | Fix key or add system element |
 | S-14 | Every system element with `drillDown` starting with `"container"` must have a corresponding entry in `containers` | Add containers entry or remove drillDown |
+| S-15 | Every `sequences[]` has a unique `id`; every `participants[].id` is unique within its sequence | Rename the duplicate id |
+| S-16 | Every `sequences[].messages[].from`/`to` references a `participants[].id` in the same sequence | Fix the participant reference |
+| S-17 | Every `sequences[].fragments[]` has valid `from`/`to` (existing participant ids) and `startMessage` ≤ `endMessage` within the message index range | Fix the participant span or message indices |
 
 ---
 
@@ -47,6 +50,7 @@ Validation levels:
 | C-06 | ERROR | Every relationship has a non-empty `label` | Add a descriptive label |
 | C-07 | WARNING | Every NFR has a non-empty `metric` | Add a measurable metric |
 | C-08 | WARNING | Every design decision has a non-empty `tradeoff` | Document the trade-off |
+| C-09 | WARNING | At least one sequence diagram is present (`sequences` non-empty) — standard output | Author the primary end-to-end sequence (Phase 8b) |
 
 ---
 

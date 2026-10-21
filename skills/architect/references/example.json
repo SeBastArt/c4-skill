@@ -1357,5 +1357,49 @@
         ]
       }
     ]
-  }
+  },
+  "sequences": [
+    {
+      "id": "seq-reserve-pay",
+      "title": "Sitzplatz reservieren & bezahlen (Happy Path)",
+      "tabLabel": "Sequenz",
+      "note": "Optimistic Locking hält den Sitz (TTL 8min); Zahlung via PSP, Bestätigung asynchron über den Broker.",
+      "participants": [
+        { "id": "p-cust", "name": "Kunde" },
+        { "id": "p-gw", "name": "API Gateway" },
+        { "id": "p-res", "name": "Reservation Svc" },
+        { "id": "p-seats", "name": "Seats DB" },
+        { "id": "p-order", "name": "Order Svc" },
+        { "id": "p-psp", "name": "PSP PayPal" },
+        { "id": "p-broker", "name": "Message Broker" },
+        { "id": "p-notify", "name": "Notification" }
+      ],
+      "messages": [
+        { "from": "p-cust", "to": "p-gw", "label": "reserviere Sitz (seatId)", "type": "sync" },
+        { "from": "p-gw", "to": "p-res", "label": "POST /reservations", "type": "sync" },
+        { "from": "p-res", "to": "p-seats", "label": "SELECT seat FOR UPDATE", "type": "sync" },
+        { "from": "p-seats", "to": "p-res", "label": "seat = AVAILABLE", "type": "return" },
+        { "from": "p-res", "to": "p-res", "label": "status = HELD, TTL 8min (optimistic lock)", "type": "self" },
+        { "from": "p-res", "to": "p-gw", "label": "201 (reservationId)", "type": "return" },
+        { "from": "p-gw", "to": "p-cust", "label": "Sitz reserviert (HELD)", "type": "return" },
+        { "from": "p-cust", "to": "p-gw", "label": "bezahle (reservationId)", "type": "sync" },
+        { "from": "p-gw", "to": "p-order", "label": "POST /orders", "type": "sync" },
+        { "from": "p-order", "to": "p-psp", "label": "charge(amount)", "type": "sync" },
+        { "from": "p-psp", "to": "p-order", "label": "paymentId (captured)", "type": "return" },
+        { "from": "p-order", "to": "p-broker", "label": "publish OrderPaid {orderId}", "type": "sync", "async": true },
+        { "from": "p-broker", "to": "p-notify", "label": "consume OrderPaid", "type": "sync", "async": true },
+        { "from": "p-notify", "to": "p-cust", "label": "Bestätigung per E-Mail", "type": "return" }
+      ],
+      "fragments": [
+        {
+          "type": "alt",
+          "condition": "[Zahlung erfolgreich] — sonst: 402 + Reservierung freigeben",
+          "from": "p-order",
+          "to": "p-notify",
+          "startMessage": 10,
+          "endMessage": 12
+        }
+      ]
+    }
+  ]
 }
