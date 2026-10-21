@@ -1,9 +1,25 @@
 ---
 name: c4
-description: Use when the user wants to create, design, model, visualize, validate, amend, or export a software architecture or C4 diagram — including rendering or checking an existing architecture.json. Triggers include "C4", "Architektur", "architecture", "Systemarchitektur", "system design", "Architekturdiagramm", architecture workshop, NFR/FR modeling, Structurizr export.
+description: Use when the user wants to create, design, model, visualize, validate, amend, or export a software architecture or C4 diagram — including rendering or checking an existing architecture.json. Also derives and maintains a code-backed model of an existing repository (Code Mode, Verify Mode; works alongside OpenWiki). Triggers include "C4", "C4 aus dem Code", "Architektur dieses Repos", "Architektur", "architecture", "Systemarchitektur", "system design", "Architekturdiagramm", architecture workshop, NFR/FR modeling, Structurizr export.
 ---
 
 # C4 Architecture Skill
+
+## Pick the mode first
+
+| Situation | Mode | Questions to the user |
+|---|---|---|
+| A repository exists and has no model yet | **Code Mode** (below) | none — the code answers |
+| The repository has `doc/architecture/architecture.json` and its code changed | **Verify Mode** (below); the diff is the PBI's diff (`git diff <base branch>...HEAD`) | none |
+| A model exists and the user wants a change | Amend Mode | the change only |
+| No code yet, an architecture to design | Guided Architecture Workshop (Phases 1–10) | one confirmation per phase |
+| Render, validate or export an existing model | Render-Only, Validate-Only, Export Mode | none |
+
+The workshop phases below are written as questions to a user. In Code Mode and Verify Mode the
+code answers them; do not ask.
+
+Script paths below are written for an agent workspace (`.agents/skills/c4/scripts/...`). In Claude
+Code the skill lives in `~/.claude/skills/c4` or in the plugin folder; use that folder instead.
 
 ## Overview
 
@@ -12,8 +28,8 @@ This skill creates **interactive C4 architecture diagrams** as self-contained HT
 **Load references on-demand per phase — NOT all at once:**
 
 ### Tier 1 — Always (minimal baseline):
-- `references/json-schema.md` — Data model definition (v2.2, multi-container, multi-component, FRs + NFRs)
-- `references/quality.md` — Validation rules (7 categories S/C/X/T/W/F/V — rule count and details there)
+- `references/json-schema.md` — Data model definition (v2.3, multi-container, multi-component, FRs + NFRs, code evidence)
+- `references/quality.md` — Validation rules (8 categories S/C/X/T/W/F/V/E — E for models of existing code)
 
 ### Tier 2 — Phase 3 (NFR collection):
 - `references/pattern-catalog.md` — Navigator: NFR→Pattern Quick-Reference, Pattern-Stacks
@@ -39,8 +55,9 @@ This skill creates **interactive C4 architecture diagrams** as self-contained HT
 ## Output
 
 A single self-contained `.html` file containing:
-- SVG canvases: Context, Container, 1-N Component views (one per decomposed container), Code
+- SVG canvases: Context, Container, 1-N Component views (one per decomposed container), **1-N Sequence views**, Code
 - Tab navigation with breadcrumbs (component tabs show container name)
+- **Sequence diagram(s)** — UML-style interaction flow(s), rendered by default from the primary use case (see Phase 8b)
 - Requirements panel (collapsible right sidebar: FRs, NFRs, Design Decisions)
 - Code snippet overlays (dark theme, Catppuccin Mocha syntax highlighting)
 - Drill-down navigation between levels (double-click)
@@ -311,17 +328,45 @@ Beispiel: "Wenn der Kafka-Broker ausfällt, unter normaler Last, dann bleiben Ev
 
 ---
 
+### Phase 8b: Sequence Diagrams (Interaction Flows) — Standard Output
+
+**Goal:** Capture the runtime interaction as one or more UML-style sequence diagrams. **At least one sequence diagram is standard output** — it shows *how* the pieces collaborate over time, which the static C4 levels cannot. Only skip it for a pure landscape model with no runtime flow.
+
+Derive the **primary sequence** from the most important `must`-priority FR (the core end-to-end path). Add further sequences for important alternative flows or secondary use cases if they add clarity.
+
+For each sequence, capture:
+1. **Title** — What flow does this show? (e.g., "Bestellung aufgeben (Happy Path)")
+2. **Participants** — The lifelines, left→right in call order. Reuse the real element names from the Context/Container levels (actor, gateway, services, data stores, external systems). Keep names short (≤ ~18 chars).
+3. **Messages** — Ordered top→down. For each: `from`, `to`, `label` (what is sent), and `type`:
+   - `sync` — a call (solid arrow). Default.
+   - `return` — a response (dashed arrow).
+   - `self` — internal processing on one participant (self-loop).
+4. **Fragments** (optional) — Combined fragments over a contiguous message range: `alt` (alternative/branch), `par` (parallel), `loop`, `opt` (optional). Give each a `condition` guard and the participant span (`from`/`to`) plus the enclosed message index range (`startMessage`/`endMessage`, 0-based).
+
+**Rules:**
+- Model the same protocol semantics as the C4 relationships (sync vs. async/return).
+- Prefer 1 clear primary sequence over many noisy ones. Typical: 1-3 sequences.
+- Every participant should send or receive at least one message.
+- Reflect the architecture's cross-cutting concerns where relevant (e.g., an auth/authorization hop, graceful-degradation branches) — these make the flow honest.
+
+**Output:** Present each sequence as an ordered participant list + numbered message list (with fragments) for confirmation. This maps 1:1 to the `sequences` array in `architecture.json` (see `references/json-schema.md`).
+
+---
+
 ### Phase 9: Assembly & Validation
 
 **Goal:** Assemble everything into `architecture.json` and validate.
 
-1. Build the complete JSON following `references/json-schema.md` (v2.2 format)
+1. Build the complete JSON following `references/json-schema.md` (v2.3 format; v2.2 without evidence fields)
 2. Use `containers` dictionary for container views (one per system) and `components` dictionary for component views
 3. Ensure all IDs use correct prefixes (`ctx-`, `cnt-`, `cmp-<container>-`)
 4. Ensure all relationships use `async: true/false` (boolean, not `protocol: "async"`)
-5. Run ALL validation rules from `references/quality.md` (all 7 categories)
-6. Fix any errors, warn about warnings
-7. Write the validated `architecture.json` to disk
+5. Include the `sequences` array (≥ 1 sequence — standard output). Validate that every message/fragment `from`/`to` references a participant in the same sequence and that fragment message indices are in range.
+6. Write `architecture.json` to disk and run `py .agents/skills/c4/scripts/c4_validate.py <model>` — it checks every
+   rule a script can decide (structure, references, counts, evidence format; exit 1 on errors).
+   Then judge the remaining rules from `references/quality.md` by reading (is a `why` convincing,
+   does evidence carry its statement). Category E only when the model describes existing code.
+7. Fix any errors, warn about warnings, re-run the script until it reports no errors
 
 **Validation is not optional.** Every architecture must pass at minimum:
 - All structural integrity rules (Category S) — zero errors
@@ -336,7 +381,15 @@ Beispiel: "Wenn der Kafka-Broker ausfällt, unter normaler Last, dann bleiben Ev
 
 **Architecture:** All SVG content is rendered dynamically from a JavaScript `C4` data object. No hardcoded SVG paths. This enables drag & drop with auto-updating arrows and groups.
 
-**Steps:**
+**Default: use the script.** `py .agents/skills/c4/scripts/c4_render.py <model> <out.html>` performs steps 1–10
+below deterministically (engine and CSS from engine.js.md, palette from render-spec.md, skeleton
+from base.html, evidence passed through). Assemble by hand only when changing the renderer itself.
+Then `py .agents/skills/c4/scripts/c4_check_page.py <out.html>` (Playwright, optional): no console errors,
+every tab draws. Look at the screenshots or the page once: the layout engine places elements from
+position hints and does not resolve overlaps on crowded views — adjust `position` hints (or split a
+view above ~12 elements) when boxes overlap or leave the canvas.
+
+**Steps (what the script does):**
 1. Load `templates/base.html` as skeleton
 2. Load `references/engine.js.md` — use the **complete rendering engine code** from this reference
 3. Follow `references/render-spec.md` for all visual and interaction decisions
@@ -349,9 +402,11 @@ Beispiel: "Wenn der Kafka-Broker ausfällt, unter normaler Last, dann bleiben Ev
    - `C4.frs` — FR data for the panel
    - `C4.nfrs` — NFR data for the panel
    - `C4.designDecisions` — decision data for the panel (hover highlights related elements via `data-elements`)
+   - `C4.sequences` — sequence data (`{id, title, tabLabel?, note?, participants[], messages[], fragments[]}`); rendered by `renderSequence()`
 5. Calculate initial element positions using the layout algorithm from json-schema.md
 6. Generate one `<svg id="svg-container-<system-id>">` per container view and one `<svg id="svg-component-<container-id>">` per component view (NO local `<defs>` — shared defs SVG provides filter `#ds` and marker `#af`)
 7. Generate component tabs dynamically (one per component view, labeled with container name)
+7b. Generate one **empty** `<svg id="svg-sequence-<id>">` shell per sequence and one sequence tab (`data-level="sequence:<id>"`, label = `tabLabel`/`title`) — the engine's `renderSequence()` fills the shell and sets its viewBox
 8. Embed the rendering engine from `references/engine.js.md` — do NOT rewrite, copy the reference code
 9. Replace ALL template placeholders:
    - `{{PROJECT_NAME}}` — from `project.name`
@@ -364,6 +419,8 @@ Beispiel: "Wenn der Kafka-Broker ausfällt, unter normaler Last, dann bleiben Ev
    - `{{CONTAINER_TABS}}` — one `<button>` per container view
    - `{{COMPONENT_SVGS}}` — one `<svg>` per component view (NO local defs)
    - `{{COMPONENT_TABS}}` — one `<button>` per component view
+   - `{{SEQUENCE_SVGS}}` — one **empty** `<svg id="svg-sequence-<id>">` shell per sequence
+   - `{{SEQUENCE_TABS}}` — one `<button data-level="sequence:<id>">` per sequence
    - `{{FR_PANEL_HTML}}` — FR items HTML
    - `{{NFR_PANEL_HTML}}` — NFR items HTML
    - `{{DESIGN_DECISIONS_HTML}}` — DD items HTML with `data-elements` attribute
@@ -376,6 +433,7 @@ Beispiel: "Wenn der Kafka-Broker ausfällt, unter normaler Last, dann bleiben Ev
 - `renderArrows(svgId, levelData)` — clears and re-renders all arrows from relationship data
 - `renderGroups(svgId, levelData)` — auto-calculates group bounding boxes from member elements
 - `svgShape(element, colors)` — returns SVG markup for element type (person, database, gateway, etc.)
+- `renderSequence(seqId)` — renders a UML-style sequence diagram from `C4.sequences` into `svg-sequence-<id>` (deterministic layout, sets viewBox)
 - `highlightCode(code, lang)` — regex-based syntax highlighting
 
 **Quality checks before delivery:** See full checklist in `references/render-spec.md` → "Quality Checklist". All items must pass.
@@ -384,15 +442,112 @@ Beispiel: "Wenn der Kafka-Broker ausfällt, unter normaler Last, dann bleiben Ev
 
 ## Quick Mode
 
-If the user says "quick" or provides a very detailed specification upfront, compress Phases 1-8 into a single analysis step. Still validate (Phase 9) and render (Phase 10) with full rigor.
+If the user says "quick" or provides a very detailed specification upfront, compress Phases 1-8b into a single analysis step (still author at least one sequence). Still validate (Phase 9) and render (Phase 10) with full rigor.
+
+## Code Mode (model an existing repository)
+
+Run the scripts from the workspace root as `py .agents/skills/c4/scripts/<script> ...` with relative paths (`workspace/<repo>/...`), one command per terminal call: VS Code approves exactly that form without asking.
+
+Use when the architecture is to be **derived from code**, not designed in a workshop
+("model this repo", "C4 aus dem Code", onboarding to an unknown code base). The workshop phases
+become one analysis step, as in Quick Mode, but every statement must be bound to code.
+
+1. **Derive** — Phases 1–8b from code, tests and configuration only. Read `doc/` and `openwiki/`
+   for orientation, never as a source. Mark guesses as you go. The workshop questions are answered
+   from the code instead of asked:
+   - Scope and actors (1, 4): entry points, hosting, who calls in (API clients, UIs, schedulers).
+   - FRs (2): public endpoints, commands, handlers and the tests that exercise them; priority
+     `must` for what the entry points serve, never invented features.
+   - NFRs (3): timeouts, retries, limits, caching, security settings and tests that assert them. Any
+     category fits (also testability, maintainability); the metric is the value in code or config,
+     not a target nobody set.
+   - Containers and components (5, 6): deployable units and projects; inside, the classes that own
+     a responsibility — not every class.
+   - Decisions (8): ADRs if present, otherwise choices visible in code (library, pattern, mode
+     switch). Alternatives only if the code or its history names them.
+   - Sequences (8b): one per main entry flow, traced through the actual calls.
+2. **Assemble** — Phase 9 steps 1–5, `version: "2.3"`.
+3. **Bind evidence (Phase 9b)** — mandatory, see below.
+4. **Validate** — all categories including E.
+5. **Stamp** — `py .agents/skills/c4/scripts/c4_evidence.py stamp <model> --root <repo>` (needs Node and
+   `OPENWIKI_CLI`; without them skip and say so — `check` still works). Stamping writes `version`
+   into `architecture.json`. From then on edit that file; a model regenerated from a helper script
+   loses the versions — re-stamp after any regeneration.
+6. **Render** — Phase 10. Write both files to `doc/architecture/` in the repository
+   (`architecture.json`, `architecture.html`). Never into `openwiki/`: OpenWiki deletes everything
+   there except `INSTRUCTIONS.md` on init.
+7. **Report** — counts per kind (bound/unbound), the unbound list with reasons, and every place
+   where binding evidence changed the model (step 3). Security-relevant observations never go into the model:
+   record them with skill `security-findings` where the workspace has it (local, outside the repository),
+   otherwise tell the user directly; name the ids in the report.
+
+### Phase 9b: Bind Evidence
+
+Binding evidence is the verification step of the model, not paperwork. In the first trial it found
+five statements the code contradicts (an assumed TLS that is optional, a retry that never fires, an
+error path the model missed).
+
+For every element, relationship, snippet, design decision, NFR and sequence message:
+1. Read the code that should carry the statement — the actual lines, after checking the file length.
+2. Add one evidence entry per statement (`supports`), 3–40 lines each; set `kind`. Usually one to
+   three entries per item — more when the item really states more (a metric plus its default).
+3. If the code says something else: **correct the model**, and list the correction in the report.
+4. If nothing in the code carries it (a person, a physical action, an assumption): `evidence: []`
+   and `"unanchored": "<reason>"` on the item — the validator then knows it is deliberate.
+
+**Practical:** a model of 100+ items is easiest to write as a Python dict in a scratch script that
+dumps the JSON (outside the repository). Once stamped, edit `architecture.json` directly.
+5. Snippets: evidence on the original lines the snippet was taken from.
+6. Run `py .agents/skills/c4/scripts/c4_evidence.py check <model> --root <repo>` until it exits 0, and
+   `c4_validate.py` for the E rules (E-09 flags ranges outside 3–40 lines).
+
+## Verify Mode (after code changes)
+
+Trigger: "prüfe das Modell", "ist das C4 noch aktuell", or as part of an OpenWiki update.
+
+1. `py .agents/skills/c4/scripts/c4_evidence.py verify <model> --root <repo> --fix-moved` — moved evidence gets its
+   new line numbers automatically. The output lists only what needs you: each `changed` or `gone` entry with the
+   item's `name`, the `text` its evidence supports and `at`, its lines in `architecture.json`: read only those lines
+   (or `c4_evidence.py show <model> <item> ...`, which quotes them exactly for a patch) instead of the whole file;
+   `summary` keeps the full counts.
+2. For every listed entry: re-read the code at `current`, amend the item (Amend Mode rules). Then
+   `verify --fix-moved --accept-changed <item> ...` (e.g. `element:cmp-x`; quote relationship refs, `'relationship:a->b:label'`, since `>` is a redirect) re-stamps exactly the amended items in the
+   same call; they count as `accepted`, and exit 0 means nothing is left. A `gone` entry has no `current`: find the
+   code again, set `resource` to its new lines, delete the entry's `version` and run `stamp` (a resource changed
+   with the old version left in place stays `gone`). Add entries for new statements and `stamp` them.
+3. **Mandatory:** search the model for what the diff changed. `verify` only sees evidence lines; in
+   practice most false statements sat elsewhere (a default cited in an NFR metric, an exit code in an
+   acceptance criterion). Take every changed identifier, constant, config key and literal value from
+   `git diff <base branch>...HEAD` (the PBI's diff; in a scheduled run, the diff since the last commit that touched `doc/architecture/`) and search `architecture.json` for it (`rg -n "<old value>"`). Amend every hit, then repeat the search: it must return nothing for an old value — one fixed hit is not enough, the same phrase often stands in several items.
+   **New structure gets its own item.** A new class or service with its own responsibility at the
+   level the model already draws (the existing components show the grain), a new external system or
+   a new runtime dependency becomes an element with relationships and evidence (Amend Mode rules,
+   then `stamp`); naming it in another item's text is not enough.
+4. Validate, render, `c4_check_page.py`, again after every later change to the model. Report what changed in the model and why, and how each
+   false statement was found (verify, search, reading).
+
+## Working with OpenWiki
+
+C4 model and OpenWiki are two views derived from the same code. Neither is evidence for the other.
+
+- Both cite code with the same `repo://…#L` format; the C4 evidence uses OpenWiki's resolver, so
+  both age the same way.
+- After an OpenWiki update, `py .agents/skills/c4/scripts/c4_evidence.py pairs <model> --claims <repo>/openwiki/.claims`
+  lists, per model item, the wiki claims on the same lines. Read the items whose claims changed in
+  the update; a contradiction usually means the model is behind.
+- The model may give OpenWiki structure (containers and components as a page plan, sequences as
+  flows to explain), but wiki claims must cite code, never `doc/architecture/`.
+- Decided items (`origin: "decided"`) are where the two help most: a fresh agent given the decision
+  and its evidence finds out whether the code implements it.
 
 ## Render-Only Mode
 
 If an `architecture.json` already exists:
-- Skip Phases 1-8
+- Skip Phases 1-8b
 - Load the JSON
 - Validate (Phase 9)
 - Render (Phase 10)
+- If the JSON has **no `sequences`**, still render the other levels, but flag it and offer to author a primary sequence (Phase 8b) from the existing FRs/relationships — a sequence diagram is standard output.
 
 Trigger: User says "render", "visualize", or provides a path to an existing architecture.json.
 
@@ -418,6 +573,7 @@ If the user wants to modify an existing architecture:
    - New FR → Which elements implement it? Is priority set?
    - New NFR → Is there a design decision addressing it?
    - Changed element → Do related decisions/snippets need updating?
+   - New/changed runtime flow → Does a sequence diagram need adding or updating?
 6. **Validate** (Phase 9) — Run full validation
 7. **Diff Summary** — Present a before/after diff of changed elements
 8. **Render** (Phase 10) — Re-render the updated HTML

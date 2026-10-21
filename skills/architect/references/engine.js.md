@@ -78,7 +78,7 @@ function svgShape(el, colors) {
   const textColor = c.text || '#fff';
 
   if (el.type === 'person' || el.type === 'external_person') {
-    return `<g class="c4-element" data-id="${el.id}" tabindex="0" transform="translate(${el.x},${el.y})">
+    return `<g class="c4-element" data-id="${esc(el.id)}" tabindex="0" transform="translate(${el.x},${el.y})">
       <circle cx="60" cy="20" r="16" fill="${c.fill}" stroke="${c.stroke}" stroke-width="2"/>
       <line x1="60" y1="36" x2="60" y2="75" stroke="${c.stroke}" stroke-width="2"/>
       <line x1="30" y1="55" x2="90" y2="55" stroke="${c.stroke}" stroke-width="2"/>
@@ -92,7 +92,7 @@ function svgShape(el, colors) {
 
   if (el.type === 'database') {
     const ry = 12;
-    return `<g class="c4-element" data-id="${el.id}" tabindex="0" transform="translate(${el.x},${el.y})">
+    return `<g class="c4-element" data-id="${esc(el.id)}" tabindex="0" transform="translate(${el.x},${el.y})">
       <rect x="0" y="${ry}" width="${el.w}" height="${el.h - ry}" fill="${c.fill}" stroke="${c.stroke}" stroke-width="2"/>
       <ellipse cx="${el.w/2}" cy="${ry}" rx="${el.w/2}" ry="${ry}" fill="${c.fill}" stroke="${c.stroke}" stroke-width="2"/>
       <ellipse cx="${el.w/2}" cy="${el.h}" rx="${el.w/2}" ry="${ry}" fill="${c.fill}" stroke="${c.stroke}" stroke-width="2"/>
@@ -104,7 +104,7 @@ function svgShape(el, colors) {
   if (el.type === 'gateway') {
     const hw = el.w/2, hh = el.h/2, inset = 20;
     const pts = `${hw},0 ${el.w - inset},${hh * 0.4} ${el.w - inset},${hh * 1.6} ${hw},${el.h} ${inset},${hh * 1.6} ${inset},${hh * 0.4}`;
-    return `<g class="c4-element" data-id="${el.id}" tabindex="0" transform="translate(${el.x},${el.y})">
+    return `<g class="c4-element" data-id="${esc(el.id)}" tabindex="0" transform="translate(${el.x},${el.y})">
       <polygon points="${pts}" fill="${c.fill}" stroke="${c.stroke}" stroke-width="2" filter="url(#ds)"/>
       <text x="${hw}" y="${hh - 4}" text-anchor="middle" fill="${textColor}" font-size="13" font-weight="600">${esc(el.name)}</text>
       <text x="${hw}" y="${hh + 12}" text-anchor="middle" fill="${textColor}" font-size="10" opacity="0.85">${truncate(el.desc, 28)}</text>
@@ -116,7 +116,7 @@ function svgShape(el, colors) {
   const dashAttr = (el.type === 'message_broker' || el.type === 'queue') ? ' stroke-dasharray="6,3"' : '';
   const rx = (el.type.startsWith('cmp') || ['controller','service_class','repository','event_handler','background_worker','validator','factory','facade','adapter'].includes(el.type)) ? 4 : 8;
   const sw = rx === 4 ? 1.5 : 2;
-  return `<g class="c4-element" data-id="${el.id}" tabindex="0" transform="translate(${el.x},${el.y})">
+  return `<g class="c4-element" data-id="${esc(el.id)}" tabindex="0" transform="translate(${el.x},${el.y})">
     <rect width="${el.w}" height="${el.h}" rx="${rx}" fill="${c.fill}" stroke="${c.stroke}" stroke-width="${sw}"${dashAttr} filter="url(#ds)"/>
     <text x="${el.w/2}" y="${el.h/2 - 6}" text-anchor="middle" fill="${textColor}" font-size="13" font-weight="600">${esc(el.name)}</text>
     <text x="${el.w/2}" y="${el.h/2 + 10}" text-anchor="middle" fill="${textColor}" font-size="10" opacity="0.85">${truncate(el.desc, 30)}</text>
@@ -124,7 +124,9 @@ function svgShape(el, colors) {
   </g>`;
 }
 
-function esc(s) { return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+// Every model value that reaches innerHTML or an attribute goes through esc() — model text is
+// written by agents from repository content and must never become markup.
+function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function truncate(s, max) { s = s || ''; return s.length > max ? esc(s.slice(0, max - 1)) + '...' : esc(s); }
 
 // ===== Arrow Rendering =====
@@ -202,6 +204,8 @@ function renderLevel(levelKey) {
     const containerId = levelKey.split(':')[1];
     svgId = 'svg-component-' + containerId;
     levelData = (C4.levels.components || {})[containerId];
+  } else if (levelKey.startsWith('sequence:')) {
+    renderSequence(levelKey.split(':')[1]); return;
   } else if (levelKey === 'code') {
     renderCodeLevel(); return;
   }
@@ -216,6 +220,69 @@ function renderLevel(levelKey) {
   });
   renderGroups(svgId, levelData);
   renderArrows(svgId, levelData);
+}
+
+// ===== Sequence Diagram (static, data-driven) =====
+// Renders C4.sequences[<id>] as a UML-style sequence diagram into
+// <svg id="svg-sequence-<id>">. No drag/drop; layout is deterministic.
+function renderSequence(seqId) {
+  const seq = (C4.sequences || []).find(s => s.id === seqId);
+  const svg = document.getElementById('svg-sequence-' + seqId);
+  if (!seq || !svg) return;
+  const P = seq.participants || [];
+  const msgs = seq.messages || [];
+  const frags = seq.fragments || [];
+  const STEP = 180, HEADW = 156, X0 = 110, Y0 = 152, DY = 42, FRAGHEAD = 44;
+  const cx = P.map((_, i) => X0 + i * STEP);
+  const idx = {}; P.forEach((p, i) => { idx[p.id] = i; });
+  // extra vertical space above a message that opens a fragment (for its header)
+  const extra = {};
+  frags.forEach(f => { if (typeof f.startMessage === 'number') extra[f.startMessage] = (extra[f.startMessage] || 0) + FRAGHEAD; });
+  const ys = []; let cur = Y0;
+  for (let i = 0; i < msgs.length; i++) { cur += extra[i] || 0; ys.push(cur); cur += DY; }
+  const VBW = (cx.length ? cx[cx.length - 1] : X0) + 110;
+  const VBH = (ys.length ? ys[ys.length - 1] : Y0) + 70;
+  const TOP = 74, BOTTOM = VBH - 24;
+  const E = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const o = [];
+  if (seq.title) o.push(`<text class="seq-title" x="30" y="34" font-size="18" font-weight="700">${E(seq.title)}</text>`);
+  if (seq.note)  o.push(`<text class="seq-cond" x="30" y="54" font-size="12" font-style="italic">${E(seq.note)}</text>`);
+  // lifelines + participant heads
+  P.forEach((p, i) => {
+    o.push(`<line class="seq-lifeline" x1="${cx[i]}" y1="${TOP + 40}" x2="${cx[i]}" y2="${BOTTOM}"/>`);
+    o.push(`<rect class="seq-head-rect" x="${cx[i] - HEADW / 2}" y="${TOP}" width="${HEADW}" height="40" rx="8"/>`);
+    o.push(`<text class="seq-head-text" x="${cx[i]}" y="${TOP + 25}" text-anchor="middle" font-size="12" font-weight="600">${E(p.name)}</text>`);
+  });
+  // combined fragments (alt / par / loop / opt) drawn behind messages
+  frags.forEach(f => {
+    const i0 = f.startMessage, i1 = f.endMessage;
+    const l = idx[f.from], r = idx[f.to];
+    if (i0 == null || i1 == null || l == null || r == null || !ys[i0] || !ys[i1]) return;
+    const yt = ys[i0] - 40, yb = ys[i1] + 16;
+    const xl = cx[Math.min(l, r)] - 70, xr = cx[Math.max(l, r)] + 70;
+    o.push(`<rect class="seq-frame" x="${xl}" y="${yt}" width="${xr - xl}" height="${yb - yt}" rx="6"/>`);
+    o.push(`<path class="seq-tab" d="M${xl} ${yt} h48 v13 l-8 8 h-40 z"/>`);
+    o.push(`<text class="seq-tabtext" x="${xl + 7}" y="${yt + 15}" font-size="11">${E(f.type || 'alt')}</text>`);
+    o.push(`<text class="seq-cond" x="${xl + 58}" y="${yt + 15}" font-size="11" font-style="italic">${E(f.condition || '')}</text>`);
+  });
+  // messages
+  msgs.forEach((m, i) => {
+    const y = ys[i], a = idx[m.from], b = idx[m.to];
+    if (a == null) return;
+    if (m.type === 'self' || m.from === m.to) {
+      const x = cx[a];
+      o.push(`<path class="seq-msg" d="M${x} ${y} h48 v22 h-48" marker-end="url(#af)"/>`);
+      o.push(`<text class="seq-lbl" x="${x + 56}" y="${y + 8}" font-size="11">${E(m.label)}</text>`);
+      return;
+    }
+    if (b == null) return;
+    const x1 = cx[a], x2 = cx[b];
+    const dashed = (m.type === 'return' || m.type === 'reply' || m.async === true);
+    o.push(`<line class="seq-msg${dashed ? ' dashed' : ''}" x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" marker-end="url(#af)"/>`);
+    o.push(`<text class="seq-lbl" x="${(x1 + x2) / 2}" y="${y - 6}" text-anchor="middle" font-size="11">${E(m.label)}</text>`);
+  });
+  svg.setAttribute('viewBox', `0 0 ${VBW} ${VBH}`);
+  svg.innerHTML = o.join('\n');
 }
 
 // ===== Code Level =====
@@ -279,7 +346,7 @@ function renderCodeLevel() {
     const cardW = colWidths[col], cardH = rowHeights[row];
     const codeHtml = highlightCode(sn.code || '', sn.lang || 'text');
     const whyText = sn.why ? truncate(sn.why, 60) : '';
-    layer.innerHTML += `<g transform="translate(${sx},${sy})" class="code-card" data-snippet-id="${sn.id}">
+    layer.innerHTML += `<g transform="translate(${sx},${sy})" class="code-card" data-snippet-id="${esc(sn.id)}">
       <rect width="${cardW}" height="${cardH}" rx="8" fill="#1E1E2E" stroke="#313244" stroke-width="1.5"/>
       <rect width="${cardW}" height="32" rx="8" fill="#313244"/>
       <rect y="24" width="${cardW}" height="8" fill="#313244"/>
@@ -306,11 +373,20 @@ function highlightCode(code, lang) {
     placeholders.push(`<span style="${style}">${match}</span>`);
     return id;
   }
-  // Block comments (/* ... */)
-  s = s.replace(/\/\*[\s\S]*?\*\//g, m => ph(m, 'color:#6C7086;font-style:italic'));
-  // Line comments (// or -- or #)
-  s = s.replace(/(\/\/.*|--.*)/g, m => ph(m, 'color:#6C7086;font-style:italic'));
-  if (['python','py','yaml','yml','bash','sh','shell'].includes(lang)) {
+  // Comments are language-aware: '//' would corrupt JSON/YAML values like
+  // XPath expressions or URLs ("//Product...", "https://...")
+  const langNorm = (lang || '').toLowerCase();
+  if (['typescript','javascript','ts','js','java','kotlin','kt','go','golang','sql'].includes(langNorm)) {
+    // Block comments (/* ... */)
+    s = s.replace(/\/\*[\s\S]*?\*\//g, m => ph(m, 'color:#6C7086;font-style:italic'));
+  }
+  if (['typescript','javascript','ts','js','java','kotlin','kt','go','golang'].includes(langNorm)) {
+    s = s.replace(/(\/\/.*)/g, m => ph(m, 'color:#6C7086;font-style:italic'));
+  }
+  if (langNorm === 'sql') {
+    s = s.replace(/(--.*)/g, m => ph(m, 'color:#6C7086;font-style:italic'));
+  }
+  if (['python','py','yaml','yml','bash','sh','shell'].includes(langNorm)) {
     s = s.replace(/(#.*)/g, m => ph(m, 'color:#6C7086;font-style:italic'));
   }
   // Double-quoted strings
@@ -332,6 +408,12 @@ function highlightCode(code, lang) {
       '<span style="color:#F9E2AF">$&</span>');
     s = s.replace(/\.(\w+)\(/g, '.<span style="color:#89B4FA">$1</span>(');
     s = s.replace(/\b(function|const|let|var)\s+(\w+)/g, '$1 <span style="color:#89B4FA">$2</span>');
+  } else if (['csharp','cs','c#'].includes(norm)) {
+    s = s.replace(/\b(public|private|protected|internal|static|readonly|sealed|abstract|virtual|override|partial|class|record|struct|interface|enum|namespace|using|new|return|if|else|for|foreach|while|do|switch|case|break|default|try|catch|finally|throw|when|async|await|var|const|this|base|is|as|in|out|ref|null|true|false|get|set|init|required|where|yield|lock|typeof|nameof)\b/g,
+      '<span style="color:#CBA6F7">$&</span>');
+    s = s.replace(/\b(string|int|long|double|float|decimal|bool|byte|char|object|void|Task|ValueTask|CancellationToken|TimeSpan|DateTime|DateTimeOffset|IEnumerable|IReadOnlyList|List|Dictionary|Exception)\b/g,
+      '<span style="color:#F9E2AF">$&</span>');
+    s = s.replace(/\.(\w+)\(/g, '.<span style="color:#89B4FA">$1</span>(');
   } else if (['java','kotlin','kt'].includes(norm)) {
     s = s.replace(/\b(public|private|protected|static|final|abstract|class|interface|extends|implements|new|return|if|else|for|while|do|switch|case|break|default|try|catch|finally|throw|throws|import|package|void|this|super|synchronized|volatile|transient|enum|instanceof|assert|continue|native|strictfp)\b/g,
       '<span style="color:#CBA6F7">$&</span>');
@@ -357,8 +439,9 @@ function highlightCode(code, lang) {
     s = s.replace(/\b(true|false|null)\b/g, '<span style="color:#FAB387">$&</span>');
   }
 
-  // Phase 3: Numbers (only outside placeholders)
-  s = s.replace(/\b(\d+\.?\d*)\b/g, '<span style="color:#FAB387">$1</span>');
+  // Phase 3: Numbers (only outside placeholders — lookarounds keep the
+  // \x00<index>\x00 placeholder tokens intact, otherwise Phase 4 cannot restore them)
+  s = s.replace(/(?<![\w\x00])(\d+\.?\d*)(?![\w\x00])/g, '<span style="color:#FAB387">$1</span>');
 
   // Phase 4: Restore placeholders
   placeholders.forEach((val, i) => {
@@ -412,6 +495,22 @@ function initDragAndDrop(svgId, levelData) {
   svg.addEventListener('mouseleave', endDrag);
 }
 
+// ===== Evidence (code sources of a statement) =====
+function evidenceHtml(item) {
+  const ev = item.evidence || [];
+  let html = '';
+  if (item.origin === 'decided') html += `<br><span style="color:#FAB387;font-size:10px">beschlossen${item.decidedIn ? ': ' + esc(item.decidedIn.replace('repo://', '')) : ''}</span>`;
+  if (!ev.length) return html + '<br><span style="color:#F38BA8;font-size:10px">unbelegt — nicht im Code nachgewiesen</span>';
+  html += '<br><span style="color:#AAA;font-size:10px">Belege:</span>';
+  ev.slice(0, 4).forEach(e => {
+    const r = typeof e === 'string' ? e : e.resource;
+    const sup = typeof e === 'string' ? '' : (e.supports ? ' (' + esc(e.supports) + ')' : '');
+    html += `<br><span style="font-family:monospace;font-size:10px;color:#94E2D5">${esc(r.replace('repo://', ''))}${sup}</span>`;
+  });
+  if (ev.length > 4) html += `<br><span style="color:#AAA;font-size:10px">… ${ev.length - 4} weitere</span>`;
+  return html;
+}
+
 // ===== Rich Tooltip (Element) =====
 function showElementTooltip(el, x, y) {
   const tip = document.querySelector('.tooltip');
@@ -434,6 +533,7 @@ function showElementTooltip(el, x, y) {
       if (dd) html += `<span style="color:#F9E2AF;font-size:10px">→ ${esc(dd.id)}: ${esc(dd.title)}</span><br>`;
     });
   }
+  html += evidenceHtml(el);
   tip.innerHTML = html;
   tip.style.left = (x + 14) + 'px';
   tip.style.top = (y + 18) + 'px';
@@ -452,6 +552,7 @@ function showArrowTooltip(rel, x, y) {
     const dd = (C4.designDecisions || []).find(d => d.id === rel.relatedDecision);
     if (dd) html += `<br><span style="color:#F9E2AF;font-size:10px">→ ${esc(dd.id)}: ${esc(dd.title)}</span>`;
   }
+  html += evidenceHtml(rel);
   tip.innerHTML = html;
   tip.style.left = (x + 14) + 'px';
   tip.style.top = (y + 18) + 'px';
@@ -581,6 +682,12 @@ function switchLevel(levelKey) {
       if (el) { containerName = el.name; break; }
     }
     crumbs.push({ label: containerName, key: levelKey });
+  } else if (levelKey.startsWith('sequence:')) {
+    const qId = levelKey.split(':')[1];
+    svgId = 'svg-sequence-' + qId;
+    tabSelector = `[data-level="${levelKey}"]`;
+    const seq = (C4.sequences || []).find(s => s.id === qId);
+    crumbs.push({ label: seq ? (seq.tabLabel || seq.title || 'Sequenz') : 'Sequenz', key: levelKey });
   } else if (levelKey === 'code') {
     svgId = 'svg-code'; tabSelector = '[data-level="code"]';
     crumbs.push({ label: 'Code', key: 'code' });
@@ -594,9 +701,9 @@ function switchLevel(levelKey) {
   // Render breadcrumb
   document.querySelector('.breadcrumb').innerHTML = crumbs.map((c, i) => {
     if (i < crumbs.length - 1) {
-      return `<span class="breadcrumb-link" onclick="switchLevel('${c.key}')">${c.label}</span>`;
+      return `<span class="breadcrumb-link" onclick="switchLevel('${esc(c.key)}')">${esc(c.label)}</span>`;
     }
-    return `<span>${c.label}</span>`;
+    return `<span>${esc(c.label)}</span>`;
   }).join(' <span class="breadcrumb-sep">\u2192</span> ');
 }
 
@@ -614,6 +721,7 @@ function getSvgId(levelKey) {
   if (levelKey === 'container') { const keys = Object.keys(C4.levels.containers || {}); return keys.length ? 'svg-container-' + keys[0] : null; }
   if (levelKey.startsWith('container:')) return 'svg-container-' + levelKey.split(':')[1];
   if (levelKey.startsWith('component:')) return 'svg-component-' + levelKey.split(':')[1];
+  if (levelKey.startsWith('sequence:')) return 'svg-sequence-' + levelKey.split(':')[1];
   if (levelKey === 'code') return 'svg-code';
   return null;
 }
@@ -839,6 +947,7 @@ function init() {
     renderLevel('component:' + cId);
   });
   renderCodeLevel();
+  (C4.sequences || []).forEach(sq => renderSequence(sq.id));
 
   // Init interactions for all diagram levels
   const allLevels = [
@@ -857,6 +966,8 @@ function init() {
     initKeyboardNav(svgId, data);
     initZoomPan(svgId);
   });
+
+  (C4.sequences || []).forEach(sq => initZoomPan('svg-sequence-' + sq.id));
 
   initCodeOverlay();
   initDecisionHighlighting();
@@ -877,9 +988,13 @@ function toggleTheme() {
   // Update marker fill (CSS can't reliably style marker internals)
   document.querySelectorAll('#af polygon').forEach(p => p.setAttribute('fill', getComputedStyle(html).getPropertyValue('--arrow-color').trim()));
   // Re-render arrows to pick up CSS changes
-  const svgId = currentLevel.startsWith('component:') ? 'svg-component-' + currentLevel.split(':')[1] : 'svg-' + currentLevel;
-  const levelData = currentLevel.startsWith('component:') ? C4.levels.components[currentLevel.split(':')[1]] : C4.levels[currentLevel];
-  if (levelData) { renderArrows(svgId, levelData); renderGroups(svgId, levelData); }
+  if (currentLevel.startsWith('sequence:')) {
+    renderSequence(currentLevel.split(':')[1]);
+  } else {
+    const svgId = getSvgId(currentLevel);
+    const levelData = getLevelData(currentLevel);
+    if (svgId && levelData) { renderArrows(svgId, levelData); renderGroups(svgId, levelData); }
+  }
   // Persist preference
   try { localStorage.setItem('c4-theme', next); } catch(e) {}
 }
@@ -894,122 +1009,127 @@ The following CSS must be embedded in the `<style>` tag. This complements the en
 ```css
 /* ===== Theme Variables (Dark Default) ===== */
 :root {
-  --bg: #0d1117;
-  --bg-nav: rgba(13, 17, 23, 0.82);
-  --bg-panel: rgba(22, 27, 34, 0.78);
-  --bg-card: rgba(255, 255, 255, 0.04);
-  --border: rgba(255, 255, 255, 0.08);
-  --border-hover: rgba(255, 255, 255, 0.18);
-  --text: #e6edf3;
-  --text-secondary: #8b949e;
-  --text-muted: #6e7681;
-  --accent: #58a6ff;
-  --accent-bg: #1f6feb;
-  --arrow-color: #8b949e;
-  --arrow-label-bg: rgba(13, 17, 23, 0.88);
-  --arrow-label-border: rgba(255, 255, 255, 0.1);
-  --arrow-label-text: #c9d1d9;
-  --tab-bg: rgba(255, 255, 255, 0.06);
-  --tab-hover: rgba(255, 255, 255, 0.1);
-  --tooltip-bg: rgba(30, 33, 40, 0.95);
-  --tooltip-border: rgba(255, 255, 255, 0.08);
-  --legend-bg: rgba(13, 17, 23, 0.8);
-  --legend-border: rgba(255, 255, 255, 0.08);
-  --legend-color: #8b949e;
-  --panel-border: rgba(255, 255, 255, 0.06);
-  --fr-border: rgba(206, 147, 216, 0.25);
-  --nfr-border: rgba(255, 193, 7, 0.15);
-  --dd-border: rgba(255, 193, 7, 0.15);
-  --dd-hover-border: #daa520;
-  --fr-must-bg: rgba(198, 40, 40, 0.15); --fr-must-text: #ef9a9a;
-  --fr-should-bg: rgba(230, 81, 0, 0.15); --fr-should-text: #ffcc80;
-  --fr-could-bg: rgba(106, 27, 154, 0.15); --fr-could-text: #ce93d8;
-  --fr-wont-bg: rgba(97, 97, 97, 0.15); --fr-wont-text: #9e9e9e;
-  --nfr-cat: #58a6ff;
-  --nfr-metric: #c9d1d9;
-  --nfr-approach: #8b949e;
-  --dd-tradeoff: #f48fb1;
-  --code-overlay-backdrop: rgba(0, 0, 0, 0.85);
-  --highlight-stroke: #ffd700;
-  --arrow-hover-stroke: #c9d1d9;
-  --drag-hint-bg: rgba(255, 255, 255, 0.08);
-  --drag-hint-text: #8b949e;
-  --focus-ring: #58a6ff;
-  --legend-line: #8b949e;
+  --bg: #0a1826;
+  --grid-minor: rgba(120, 170, 220, 0.06);
+  --grid-major: rgba(120, 170, 220, 0.13);
+  --bg-nav: rgba(11, 26, 43, 0.9);
+  --bg-panel: rgba(11, 26, 43, 0.9);
+  --bg-card: rgba(120, 170, 220, 0.05);
+  --border: rgba(120, 170, 220, 0.16);
+  --border-hover: rgba(120, 170, 220, 0.36);
+  --text: #d8e6f2;
+  --text-secondary: #94aac0;
+  --text-muted: #63798f;
+  --accent: #55acff;
+  --accent-bg: #1a6fcf;
+  --arrow-color: #7ea6c9;
+  --arrow-label-bg: rgba(10, 24, 40, 0.92);
+  --arrow-label-border: rgba(120, 170, 220, 0.22);
+  --arrow-label-text: #cfe0f0;
+  --tab-bg: rgba(120, 170, 220, 0.06);
+  --tab-hover: rgba(120, 170, 220, 0.12);
+  --tooltip-bg: rgba(11, 26, 43, 0.97);
+  --tooltip-border: rgba(120, 170, 220, 0.24);
+  --legend-bg: rgba(11, 26, 43, 0.85);
+  --legend-border: rgba(120, 170, 220, 0.18);
+  --legend-color: #94aac0;
+  --panel-border: rgba(120, 170, 220, 0.16);
+  --fr-border: rgba(120, 170, 220, 0.18);
+  --nfr-border: rgba(120, 170, 220, 0.18);
+  --dd-border: rgba(120, 170, 220, 0.18);
+  --dd-hover-border: #55acff;
+  --fr-must-bg: rgba(198, 90, 80, 0.16); --fr-must-text: #f2b0a8;
+  --fr-should-bg: rgba(200, 140, 60, 0.16); --fr-should-text: #f0c88f;
+  --fr-could-bg: rgba(90, 130, 190, 0.18); --fr-could-text: #a9c6ea;
+  --fr-wont-bg: rgba(120, 150, 175, 0.14); --fr-wont-text: #9fb2c5;
+  --nfr-cat: #55acff;
+  --nfr-metric: #cfe0f0;
+  --nfr-approach: #94aac0;
+  --dd-tradeoff: #e79a8f;
+  --code-overlay-backdrop: rgba(4, 12, 22, 0.88);
+  --highlight-stroke: #ffd24a;
+  --arrow-hover-stroke: #cfe0f0;
+  --drag-hint-bg: rgba(120, 170, 220, 0.1);
+  --drag-hint-text: #94aac0;
+  --focus-ring: #55acff;
+  --legend-line: #7ea6c9;
 }
 
 [data-theme="light"] {
-  --bg: #ffffff;
-  --bg-nav: rgba(250, 250, 250, 0.82);
-  --bg-panel: rgba(255, 249, 230, 0.95);
-  --bg-card: rgba(0, 0, 0, 0.02);
-  --border: rgba(0, 0, 0, 0.1);
-  --border-hover: rgba(0, 0, 0, 0.2);
-  --text: #1a1a1a;
-  --text-secondary: #555555;
-  --text-muted: #888888;
-  --accent: #1168BD;
-  --accent-bg: #1168BD;
-  --arrow-color: #555555;
-  --arrow-label-bg: rgba(255, 255, 255, 0.92);
-  --arrow-label-border: #dddddd;
-  --arrow-label-text: #333333;
-  --tab-bg: #f5f5f5;
-  --tab-hover: #e8e8e8;
-  --tooltip-bg: rgba(51, 51, 51, 0.95);
-  --tooltip-border: transparent;
+  --bg: #eaf0f7;
+  --grid-minor: rgba(30, 90, 150, 0.055);
+  --grid-major: rgba(30, 90, 150, 0.12);
+  --bg-nav: rgba(255, 255, 255, 0.95);
+  --bg-panel: rgba(255, 255, 255, 0.95);
+  --bg-card: rgba(30, 90, 150, 0.035);
+  --border: rgba(30, 80, 140, 0.18);
+  --border-hover: rgba(30, 80, 140, 0.36);
+  --text: #10273e;
+  --text-secondary: #45607a;
+  --text-muted: #7288a0;
+  --accent: #1668c5;
+  --accent-bg: #1668c5;
+  --arrow-color: #4e6f92;
+  --arrow-label-bg: rgba(255, 255, 255, 0.95);
+  --arrow-label-border: rgba(30, 80, 140, 0.22);
+  --arrow-label-text: #223b56;
+  --tab-bg: rgba(30, 90, 150, 0.05);
+  --tab-hover: rgba(30, 90, 150, 0.1);
+  --tooltip-bg: rgba(16, 39, 62, 0.96);
+  --tooltip-border: rgba(255, 255, 255, 0.12);
   --legend-bg: rgba(255, 255, 255, 0.9);
-  --legend-border: #e0e0e0;
-  --legend-color: #666666;
-  --panel-border: #F0E0A0;
-  --fr-border: #E1BEE7;
-  --nfr-border: #F0E0A0;
-  --dd-border: #F0E0A0;
-  --dd-hover-border: #DAA520;
-  --fr-must-bg: #FFCDD2; --fr-must-text: #C62828;
-  --fr-should-bg: #FFE0B2; --fr-should-text: #E65100;
-  --fr-could-bg: #E1BEE7; --fr-could-text: #6A1B9A;
-  --fr-wont-bg: #E0E0E0; --fr-wont-text: #616161;
-  --nfr-cat: #1168BD;
-  --nfr-metric: #333333;
-  --nfr-approach: #666666;
-  --dd-tradeoff: #C62828;
-  --code-overlay-backdrop: rgba(0, 0, 0, 0.8);
-  --highlight-stroke: #DAA520;
-  --arrow-hover-stroke: #333333;
-  --drag-hint-bg: rgba(0, 0, 0, 0.6);
+  --legend-border: rgba(30, 80, 140, 0.16);
+  --legend-color: #45607a;
+  --panel-border: rgba(30, 80, 140, 0.16);
+  --fr-border: rgba(30, 80, 140, 0.18);
+  --nfr-border: rgba(30, 80, 140, 0.18);
+  --dd-border: rgba(30, 80, 140, 0.18);
+  --dd-hover-border: #1668c5;
+  --fr-must-bg: #f7dcd8; --fr-must-text: #b3443b;
+  --fr-should-bg: #f6e6cf; --fr-should-text: #a9702a;
+  --fr-could-bg: #d9e6f6; --fr-could-text: #2f5f9c;
+  --fr-wont-bg: #e2e8ef; --fr-wont-text: #5a6f86;
+  --nfr-cat: #1668c5;
+  --nfr-metric: #223b56;
+  --nfr-approach: #45607a;
+  --dd-tradeoff: #b3443b;
+  --code-overlay-backdrop: rgba(16, 32, 52, 0.8);
+  --highlight-stroke: #d98c00;
+  --arrow-hover-stroke: #10273e;
+  --drag-hint-bg: rgba(16, 39, 62, 0.85);
   --drag-hint-text: #ffffff;
-  --focus-ring: #1168BD;
-  --legend-line: #555555;
+  --focus-ring: #1668c5;
+  --legend-line: #4e6f92;
 }
 
 /* ===== Base ===== */
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html { color-scheme: dark light; }
-body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; font-family: 'Inter','Segoe UI',system-ui,sans-serif; background: var(--bg); color: var(--text); transition: background 0.3s, color 0.3s; }
+body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; font-family: 'IBM Plex Sans','Inter','Segoe UI',system-ui,sans-serif; background: var(--bg); color: var(--text); transition: background 0.3s, color 0.3s; }
 
 /* Skip Link */
 .skip-link { position: absolute; left: -9999px; top: auto; width: 1px; height: 1px; overflow: hidden; z-index: 1000; background: var(--accent-bg); color: #fff; padding: 8px 16px; font-size: 14px; text-decoration: none; border-radius: 6px; }
 .skip-link:focus { position: fixed; left: 16px; top: 16px; width: auto; height: auto; overflow: visible; }
 
 /* Nav Bar — Glassmorphism */
-.nav-bar { display: flex; align-items: center; gap: 12px; padding: 8px 16px; background: var(--bg-nav); backdrop-filter: blur(16px) saturate(1.4); -webkit-backdrop-filter: blur(16px) saturate(1.4); border-bottom: 1px solid var(--border); flex-shrink: 0; transition: background 0.3s, border-color 0.3s; }
-.project-title { font-size: 16px; font-weight: 700; color: var(--text); letter-spacing: -0.01em; }
-.breadcrumb { font-size: 12px; color: var(--text-muted); margin-left: 8px; }
+.nav-bar { display: flex; align-items: center; gap: 12px; padding: 10px 18px; background: var(--bg-nav); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-bottom: 1px solid var(--border-hover); box-shadow: 0 3px 0 -1.5px var(--border); flex-shrink: 0; transition: background 0.3s, border-color 0.3s; }
+.project-title { font-size: 15px; font-weight: 700; color: var(--text); letter-spacing: 0.01em; display: inline-flex; align-items: center; }
+.project-title::before { content: 'DWG'; font-family: 'IBM Plex Mono',monospace; font-size: 10px; font-weight: 600; letter-spacing: 0.14em; color: var(--accent); border: 1px solid var(--border-hover); border-radius: 3px; padding: 2px 6px; margin-right: 10px; }
+.breadcrumb { font-family: 'IBM Plex Mono',monospace; font-size: 11px; color: var(--text-muted); margin-left: 8px; letter-spacing: 0.02em; }
 .breadcrumb-link { cursor: pointer; color: var(--accent); }
 .breadcrumb-link:hover { text-decoration: underline; }
 .breadcrumb-sep { color: var(--text-muted); margin: 0 2px; }
 .tabs { display: flex; gap: 4px; margin-left: auto; }
-.tab { padding: 6px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--tab-bg); color: var(--text-secondary); font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.2s ease; }
+.tab { padding: 6px 14px; border: 1px solid var(--border); border-radius: 3px; background: var(--tab-bg); color: var(--text-secondary); font-size: 12px; font-weight: 500; letter-spacing: 0.01em; cursor: pointer; transition: all 0.15s ease; }
 .tab:hover { background: var(--tab-hover); color: var(--text); border-color: var(--border-hover); }
-.tab.active { background: var(--accent-bg); color: #fff; border-color: transparent; box-shadow: 0 1px 8px rgba(88, 166, 255, 0.25); }
-.nfr-toggle { padding: 6px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--tab-bg); color: var(--text-secondary); cursor: pointer; font-size: 12px; font-weight: 500; transition: all 0.2s ease; }
+.tab.active { background: var(--accent-bg); color: #fff; border-color: var(--accent-bg); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+.nfr-toggle { padding: 6px 12px; border: 1px solid var(--border); border-radius: 3px; background: var(--tab-bg); color: var(--text-secondary); cursor: pointer; font-family: 'IBM Plex Mono',monospace; font-size: 11px; font-weight: 500; letter-spacing: 0.02em; transition: all 0.15s ease; }
 .nfr-toggle:hover { background: var(--tab-hover); color: var(--text); }
-.theme-toggle { padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--tab-bg); color: var(--text-secondary); cursor: pointer; font-size: 14px; line-height: 1; transition: all 0.2s ease; }
+.theme-toggle { padding: 6px 10px; border: 1px solid var(--border); border-radius: 3px; background: var(--tab-bg); color: var(--text-secondary); cursor: pointer; font-size: 14px; line-height: 1; transition: all 0.15s ease; }
 .theme-toggle:hover { background: var(--tab-hover); border-color: var(--border-hover); }
 
 /* FR items */
-.fr-item { margin-bottom: 10px; padding: 10px; background: var(--bg-card); border-radius: 8px; border: 1px solid var(--fr-border); transition: border-color 0.2s; }
+.fr-item { margin-bottom: 10px; padding: 10px 12px; background: var(--bg-card); border-radius: 3px; border: 1px solid var(--fr-border); border-left: 2px solid var(--fr-border); transition: border-color 0.2s; }
 .fr-item:hover { border-color: var(--border-hover); }
 .fr-title { font-size: 13px; font-weight: 600; margin: 2px 0; color: var(--text); }
 .fr-desc { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
@@ -1022,7 +1142,7 @@ body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; f
 .fr-criteria li { margin-bottom: 2px; }
 
 /* Canvas — subtle dot grid makes glassmorphism blur visible */
-.canvas-area { flex: 1; overflow: auto; padding: 20px; position: relative; background: var(--bg); background-image: radial-gradient(circle, var(--border) 1px, transparent 1px); background-size: 32px 32px; transition: background 0.3s; }
+.canvas-area { flex: 1; overflow: auto; padding: 20px; position: relative; background: var(--bg); background-image: linear-gradient(var(--grid-minor) 1px, transparent 1px), linear-gradient(90deg, var(--grid-minor) 1px, transparent 1px), linear-gradient(var(--grid-major) 1px, transparent 1px), linear-gradient(90deg, var(--grid-major) 1px, transparent 1px); background-size: 24px 24px, 24px 24px, 120px 120px, 120px 120px; background-position: -1px -1px, -1px -1px, -1px -1px, -1px -1px; transition: background 0.3s; }
 .canvas-area svg { width: 100%; height: 100%; display: none; }
 .canvas-area svg.active { display: block; }
 
@@ -1047,14 +1167,15 @@ body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; f
 /* Requirements Panel — Glass */
 .nfr-panel { position: fixed; right: 0; top: 45px; bottom: 0; width: 360px; background: var(--bg-panel); backdrop-filter: blur(16px) saturate(1.3); -webkit-backdrop-filter: blur(16px) saturate(1.3); border-left: 1px solid var(--panel-border); overflow-y: auto; padding: 16px; transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1), background 0.3s; z-index: 50; }
 .nfr-panel.collapsed { transform: translateX(100%); }
-.nfr-panel h3 { font-size: 14px; font-weight: 700; margin-bottom: 12px; color: var(--text); letter-spacing: -0.01em; }
-.nfr-item { margin-bottom: 10px; padding: 10px; background: var(--bg-card); border-radius: 8px; border: 1px solid var(--nfr-border); transition: border-color 0.2s; }
+.nfr-panel h3 { font-family: 'IBM Plex Mono',monospace; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; margin: 20px 0 12px; padding-bottom: 6px; color: var(--accent); border-bottom: 1px solid var(--border); }
+.nfr-panel h3:first-child { margin-top: 0; }
+.nfr-item { margin-bottom: 10px; padding: 10px 12px; background: var(--bg-card); border-radius: 3px; border: 1px solid var(--nfr-border); border-left: 2px solid var(--nfr-border); transition: border-color 0.2s; }
 .nfr-item:hover { border-color: var(--border-hover); }
 .nfr-category { font-size: 10px; font-weight: 600; color: var(--nfr-cat); text-transform: uppercase; letter-spacing: 0.04em; }
 .nfr-title { font-size: 13px; font-weight: 600; margin: 2px 0; color: var(--text); }
 .nfr-metric { font-size: 12px; color: var(--nfr-metric); font-weight: 500; }
 .nfr-approach { font-size: 11px; color: var(--nfr-approach); margin-top: 2px; }
-.dd-item { margin-bottom: 10px; padding: 10px; background: var(--bg-card); border-radius: 8px; border: 1px solid var(--dd-border); cursor: default; transition: border-color 0.2s, box-shadow 0.2s; }
+.dd-item { margin-bottom: 10px; padding: 10px 12px; background: var(--bg-card); border-radius: 3px; border: 1px solid var(--dd-border); border-left: 2px solid var(--dd-border); cursor: default; transition: border-color 0.2s, box-shadow 0.2s; }
 .dd-item:hover { border-color: var(--dd-hover-border); box-shadow: 0 0 12px rgba(218, 165, 32, 0.15); }
 .dd-title { font-size: 13px; font-weight: 600; color: var(--text); }
 .dd-tradeoff { font-size: 11px; color: var(--dd-tradeoff); font-style: italic; margin-top: 2px; }
@@ -1073,7 +1194,7 @@ body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; f
 .code-card:hover rect:first-child { stroke: #89B4FA; stroke-width: 2; }
 
 /* Legend — Glass */
-.legend { position: fixed; bottom: 16px; left: 16px; display: flex; gap: 16px; background: var(--legend-bg); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); padding: 8px 14px; border-radius: 10px; border: 1px solid var(--legend-border); font-size: 11px; color: var(--legend-color); z-index: 30; transition: background 0.3s, border-color 0.3s; }
+.legend { position: fixed; bottom: 16px; left: 16px; display: flex; gap: 16px; background: var(--legend-bg); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); padding: 8px 14px; border-radius: 4px; border: 1px solid var(--legend-border); font-family: 'IBM Plex Mono',monospace; font-size: 10px; letter-spacing: 0.03em; color: var(--legend-color); z-index: 30; transition: background 0.3s, border-color 0.3s; }
 .legend-item { display: flex; align-items: center; gap: 6px; }
 .legend-line { width: 30px; height: 2px; background: var(--legend-line); }
 .legend-line.async { background: repeating-linear-gradient(90deg, var(--legend-line) 0, var(--legend-line) 8px, transparent 8px, transparent 12px); }
@@ -1083,7 +1204,7 @@ body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; f
 .legend-line.bidir::after { right: -4px; border-left-color: var(--legend-line); }
 
 /* Drag Hint */
-.drag-hint { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--drag-hint-bg); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); color: var(--drag-hint-text); padding: 6px 14px; border-radius: 20px; font-size: 11px; z-index: 30; pointer-events: none; border: 1px solid var(--border); }
+.drag-hint { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--drag-hint-bg); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); color: var(--drag-hint-text); padding: 6px 14px; border-radius: 4px; font-family: 'IBM Plex Mono',monospace; font-size: 10px; letter-spacing: 0.02em; z-index: 30; pointer-events: none; border: 1px solid var(--border); }
 
 /* Print */
 @media print {
@@ -1093,6 +1214,19 @@ body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; f
   .nfr-panel { position: static; transform: none; width: 100%; page-break-before: always; border: 1px solid #ccc; background: #fff; backdrop-filter: none; }
   body { height: auto; overflow: visible; background: #fff; color: #000; }
 }
+
+/* ===== Sequence Diagram ===== */
+.seq-head-rect { fill: var(--bg-card); stroke: var(--border-hover); stroke-width: 1.5; }
+.seq-head-text { fill: var(--text); }
+.seq-lifeline { stroke: var(--border-hover); stroke-width: 1.5; stroke-dasharray: 5,6; }
+.seq-msg { stroke: var(--arrow-color); stroke-width: 1.5; fill: none; }
+.seq-msg.dashed { stroke-dasharray: 7,4; }
+.seq-lbl { fill: var(--text); }
+.seq-frame { fill: var(--accent); fill-opacity: 0.05; stroke: var(--accent); stroke-opacity: 0.4; stroke-width: 1.2; }
+.seq-tab { fill: var(--accent); }
+.seq-tabtext { fill: #fff; font-weight: 700; }
+.seq-cond { fill: var(--text-secondary); }
+.seq-title { fill: var(--text); }
 ```
 
 ## What the Generator Must Produce
@@ -1105,7 +1239,12 @@ The rendering engine above is **complete and static**. When generating an HTML f
 4. **`{{DESIGN_DECISIONS_HTML}}`** — DD items with `data-elements` attribute
 5. **`{{COMPONENT_SVGS}}`** — One `<svg id="svg-component-<id>">` per component view
 6. **`{{COMPONENT_TABS}}`** — One `<button class="tab" data-level="component:<id>">` per component view
-7. **ViewBox dimensions** — Calculated per level from element count and positions
-8. **`{{PROJECT_NAME}}`** — From `project.name`
+7. **`{{SEQUENCE_SVGS}}`** — One **empty** `<svg id="svg-sequence-<id>">` shell per sequence (renderSequence fills it)
+8. **`{{SEQUENCE_TABS}}`** — One `<button class="tab" data-level="sequence:<id>">` per sequence (label = `tabLabel`/`title`)
+9. **ViewBox dimensions** — Calculated per level from element count and positions (sequence viewBox is set by renderSequence)
+10. **`{{PROJECT_NAME}}`** — From `project.name`
+
+The `C4` data object must include a **`sequences`** array (see render-spec.md / json-schema.md).
+A sequence SVG shell is just `<svg id="svg-sequence-<id>" role="img" aria-label="Sequenzdiagramm: <title>" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"></svg>` — the real `viewBox` and content are produced at runtime.
 
 Everything else (CSS, JS engine, template structure) is copied verbatim from this reference.

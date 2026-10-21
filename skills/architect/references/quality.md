@@ -2,7 +2,7 @@
 
 ## Overview
 
-49 rules in 7 categories (S:14, C:8, X:5, T:4, W:5, F:5, V:8). Each rule has a severity:
+Rules in 8 categories: S-01..S-19, C-01..C-09, X-01..X-05, T-01..T-04, W-01..W-05, F-01..F-05, V-01..V-08, E-01..E-09 (E only for models of existing code). Each rule has a severity:
 - **ERROR** — Must fix. Architecture is broken without it.
 - **WARNING** — Should fix. Quality is degraded.
 - **INFO** — Nice to have. Improves polish.
@@ -25,13 +25,18 @@ Validation levels:
 | S-05 | Every code snippet `parentElement` references an existing element ID | Fix element reference or remove snippet |
 | S-06 | No self-referencing relationships (`from` !== `to`) | Remove the self-reference |
 | S-07 | Every key in `components` references an existing container-level element ID (containers-keys → see S-13) | Remove the orphaned component view or add the container |
-| S-08 | Version field is `"2.2"` | Update version |
+| S-08 | Version field is `"2.2"` or `"2.3"` (`"2.3"` when evidence/origin fields are used) | Update version |
 | S-09 | Every relationship has `async` as boolean (not string, not `protocol: "async"`) | Convert `protocol: "async"` to `async: true` |
 | S-10 | Every FR `actor` references an existing context-level `person` or `external_person` element | Fix actor reference |
 | S-11 | Every `relatedFrs` in design decisions references an existing FR ID | Fix FR reference or remove |
 | S-12 | Every `relatedFrs` in elements references an existing FR ID | Fix FR reference or remove |
 | S-13 | Every key in `containers` references an existing context-level system element ID (or is `"_default"`) | Fix key or add system element |
 | S-14 | Every system element with `drillDown` starting with `"container"` must have a corresponding entry in `containers` | Add containers entry or remove drillDown |
+| S-15 | Every `sequences[]` has a unique `id`; every `participants[].id` is unique within its sequence | Rename the duplicate id |
+| S-16 | Every `sequences[].messages[].from`/`to` references a `participants[].id` in the same sequence | Fix the participant reference |
+| S-17 | Every `sequences[].fragments[]` has valid `from`/`to` (existing participant ids) and `startMessage` ≤ `endMessage` within the message index range | Fix the participant span or message indices |
+| S-18 | Every id (elements, snippets, sequences, participants, decisions, FRs, NFRs, view keys) is a plain token `[A-Za-z0-9][A-Za-z0-9_.-]*` — ids end up in HTML attributes and handlers of the page | Rename the id |
+| S-19 | Required fields present: `project.name`, `context`; element `id/type/name`; relationship `from/to`; snippet `id/title/code/parentElement`; sequence `id/title`; group `name/elementIds` | Add the field |
 
 ---
 
@@ -47,6 +52,7 @@ Validation levels:
 | C-06 | ERROR | Every relationship has a non-empty `label` | Add a descriptive label |
 | C-07 | WARNING | Every NFR has a non-empty `metric` | Add a measurable metric |
 | C-08 | WARNING | Every design decision has a non-empty `tradeoff` | Document the trade-off |
+| C-09 | WARNING | At least one sequence diagram is present (`sequences` non-empty) — standard output | Author the primary end-to-end sequence (Phase 8b) |
 
 ---
 
@@ -54,7 +60,7 @@ Validation levels:
 
 | Rule | Severity | Check | Fix |
 |---|---|---|---|
-| X-01 | WARNING | Every context `person` appears in at least one container-level relationship across any container view (directly or via gateway) | Add the missing relationship or remove the person |
+| X-01 | WARNING | Every context `person` appears in at least one container-level relationship across any container view (directly or via gateway). **Exception (INFO):** a person who only acts through an external system or physically (e.g. inserts a card) — container views cannot hold persons (see S-01), so name the path in `why` instead | Add the missing relationship, or document the indirect path |
 | X-02 | WARNING | Every context `external_system` has a corresponding container-level element or relationship | Add the external service container |
 | X-03 | INFO | Every container with `drillDown: "component:..."` has actual component-level elements in `components[containerId]` | Add components or remove drillDown |
 | X-04 | INFO | Container-level relationship directions are reflected at component level | Verify component relationships match |
@@ -109,6 +115,25 @@ Validation levels:
 | V-06 | INFO | Technology is specified for all containers | Add technology field |
 | V-07 | WARNING | No isolated elements (at least one relationship per element) | Connect or remove the element |
 | V-08 | INFO | Max 10 code snippets | Focus on the most architecturally significant |
+
+---
+
+## Category E: Code Evidence (v2.3; ERROR/WARNING/INFO)
+
+Applies when the model describes an existing code base (Code Mode, or any model with `evidence`).
+E-02 and E-07 are checked by `.agents/skills/c4/scripts/c4_evidence.py`, not by reading.
+
+| Rule | Severity | Check | Fix |
+|---|---|---|---|
+| E-01 | ERROR | Every evidence `resource` matches `repo://<path>#L<a>-L<b>` | Correct the format |
+| E-02 | ERROR | `c4_evidence.py check` exits 0 (file exists, range inside the file) | Re-read the code, fix the range |
+| E-03 | ERROR | No evidence points to `doc/architecture/` or `openwiki/` | Cite the code the statement is about |
+| E-04 | ERROR | Every item with `origin: "decided"` has `decidedIn` | Add where the decision is written down |
+| E-05 | WARNING | Every derived element, relationship and NFR has at least one evidence entry, or carries `unanchored` with a reason | Bind it to code, or set `unanchored` (e.g. a role, a physical action) |
+| E-06 | WARNING | A statement that a mechanism is *used* is backed by `kind: calls` or `tests`, not only `defines`/`registers` | Find the call site, or weaken the statement |
+| E-07 | WARNING | `c4_evidence.py verify` reports no `changed` or `gone` | Re-read the code at the new location, amend the item, then `verify --accept-changed <item>` |
+| E-08 | INFO | Evidence carries `version` (stamped) | Run `c4_evidence.py stamp` |
+| E-09 | WARNING | Every evidence range spans 3-40 lines (one statement, not a whole class) | Narrow or split the range |
 
 ---
 

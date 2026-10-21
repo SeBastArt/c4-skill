@@ -38,6 +38,7 @@
       <g class="elements-layer"></g>
     </svg>
     <svg id="svg-component-XYZ"><!-- same structure, NO local defs --></svg>
+    <svg id="svg-sequence-XYZ"><!-- EMPTY shell, one per sequence; filled by renderSequence() --></svg>
     <svg id="svg-code">
       <g class="elements-layer"></g>  <!-- foreignObject code cards -->
     </svg>
@@ -159,6 +160,17 @@ const C4 = {
       relatedFrs,      // string[]? — FR IDs
       relatedElements  // string[] — element IDs
     }
+  ],
+  sequences: [         // one entry per interaction scenario — see json-schema.md
+    {
+      id,              // string — unique sequence ID (drives svg-sequence-<id>)
+      title,           // string — heading in the diagram
+      tabLabel,        // string? — short tab label (default: title)
+      note,            // string? — italic subtitle (e.g. global precondition)
+      participants: [ { id, name } ],
+      messages: [ { from, to, label, type /* sync|return|self */, async? } ],
+      fragments: [ { type /* alt|par|loop|opt */, condition, from, to, startMessage, endMessage } ]
+    }
   ]
 };
 ```
@@ -185,6 +197,8 @@ The rendering engine transforms `architecture.json` fields to the C4 JS object:
 | JSON field | C4 JS field | Notes |
 |---|---|---|
 | `element.description` | `desc` | Shortened key name |
+| `evidence` (element, relationship, snippet, decision) | `evidence` | Copy unchanged — the tooltip lists the sources; never drop it |
+| `origin`, `decidedIn` | `origin`, `decidedIn` | Copy unchanged — tooltip marks decided items |
 | `element.technology` | `tech` | Shortened key name |
 | `element.position` | `x, y, w, h` | Computed by layout algorithm |
 | `relationship.async` | `async` | Boolean, NOT protocol string |
@@ -240,21 +254,28 @@ The rendering engine transforms `architecture.json` fields to the C4 JS object:
 | cache_detail | #FFE0B2 | #FFCC80 | #1A1A1A |
 | broker_detail | #FFE0B2 | #FFCC80 | #1A1A1A |
 
-### UI Chrome (Dark Mode Default)
+### UI Chrome — "Blueprint / DWG" theme (Dark Mode Default)
 
-All UI chrome colors use CSS custom properties (`var(--name)`) for seamless dark/light switching. Dark mode is the default; light mode activates via `data-theme="light"` on `<html>`.
+The UI chrome uses an **engineering-drawing (blueprint) aesthetic**: a deep blue canvas with a
+crosshatch grid, a `DWG` badge before the project title, IBM Plex typography, sharp 3px corners
+and monospace accents. All chrome colors use CSS custom properties (`var(--name)`) for seamless
+dark/light switching. Dark mode is the default; light mode activates via `data-theme="light"`.
 
 | Element | Dark Mode | Light Mode |
 |---|---|---|
-| Canvas background | #0d1117 | #FFFFFF |
-| Arrow lines | #8b949e (via `--arrow-color`) | #555555 |
-| Arrow label bg | rgba(13,17,23,0.88) | rgba(255,255,255,0.92) |
-| Nav bar | Glass: rgba(13,17,23,0.82) + blur(16px) | Glass: rgba(250,250,250,0.82) + blur(16px) |
-| Tab active | #1f6feb + glow shadow | #1168BD |
-| Tab inactive | rgba(255,255,255,0.06) | #F5F5F5 |
-| Panel bg | Glass: rgba(22,27,34,0.78) + blur(16px) via `--bg-panel` | #FFF9E6 |
-| Tooltip | Glass: rgba(30,33,40,0.95) + blur(12px) | rgba(51,51,51,0.95) |
-| Legend | Glass: rgba(13,17,23,0.8) + blur(12px) | rgba(255,255,255,0.9) |
+| Canvas background | #0a1826 + crosshatch grid (24px minor / 120px major) | #eaf0f7 + grid |
+| Accent | #55acff (via `--accent`) | #1668c5 |
+| Arrow lines | #7ea6c9 (via `--arrow-color`) | #4e6f92 |
+| Arrow label bg | rgba(10,24,40,0.92) | rgba(255,255,255,0.95) |
+| Nav bar | Glass: rgba(11,26,43,0.9) + blur(10px), double-rule border | Glass: rgba(255,255,255,0.95) |
+| Project title badge | `DWG` chip, IBM Plex Mono, accent border | Same |
+| Tab active | #1a6fcf + focus-ring glow (color-mix) | #1668c5 |
+| Tab inactive | rgba(120,170,220,0.06), 3px radius | rgba(30,90,150,0.05) |
+| Panel bg | Glass: rgba(11,26,43,0.9) + blur(16px) via `--bg-panel` | rgba(255,255,255,0.95) |
+| Panel headings | IBM Plex Mono, uppercase, accent + underline | Same |
+| FR/NFR/DD item | 2px accent left-border on card | Same |
+| Tooltip | Glass: rgba(11,26,43,0.97) + blur(12px) | dark tooltip |
+| Legend / drag hint | Glass + IBM Plex Mono, 4px radius | light glass |
 | Group boundary | Element color at 5% fill, 30% stroke, dashed | Same |
 
 ### Theme Toggle
@@ -275,8 +296,13 @@ All UI chrome colors use CSS custom properties (`var(--name)`) for seamless dark
 
 ## Typography
 
+Body/UI uses **IBM Plex Sans** with an offline system fallback; monospace accents (badge,
+breadcrumb, panel headings, legend, code) use **IBM Plex Mono**. No web-font is loaded — the
+stack degrades gracefully so the file stays fully self-contained/offline.
+
 ```css
-font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+font-family: 'IBM Plex Sans', 'Inter', 'Segoe UI', system-ui, sans-serif;   /* body / UI */
+font-family: 'IBM Plex Mono', monospace;                                    /* mono accents */
 ```
 
 | Element | Size | Weight |
@@ -400,6 +426,39 @@ Groups are background rectangles that encompass their member elements.
 - Title text at top-left inside padding
 
 Groups **auto-resize** when elements are dragged.
+
+---
+
+## Sequence Diagram Rendering
+
+Each `C4.sequences[]` entry renders as a "Sequenz" tab — a UML-style interaction diagram.
+`renderSequence(seqId)` (in the engine) is **fully deterministic**: it computes every
+coordinate from the data, sets the SVG `viewBox`, and fills an empty
+`<svg id="svg-sequence-<id>">` shell via `innerHTML`. The generator supplies **only** the
+data object and the empty shells — never hand-authored SVG coordinates.
+
+### Layout constants (fixed)
+- Participant columns: `x = 110 + i*180`, head box `156×40` centered on the column.
+- Lifelines: dashed vertical line from below each head to the diagram bottom.
+- Messages: stacked top→down, first at `y=120`, pitch `42px`. A message that opens a
+  fragment gets `+44px` of headroom for the fragment header.
+- viewBox: width = `lastColumnX + 110`, height = `lastMessageY + 70`.
+
+### Marks
+- **sync** message → solid line + arrowhead (`#af` marker), label centered above.
+- **return**/**reply** (or `async: true`) → dashed line + arrowhead.
+- **self** (or `from === to`) → a `⌐`-shaped self-loop (`h48 v22 h-48`), label to the right.
+- **fragment** (`alt`/`par`/`loop`/`opt`) → translucent accent box behind its message range,
+  with a folded-corner tab showing the type and an italic `condition` guard.
+
+### Styling
+All sequence marks use CSS classes (`.seq-lifeline`, `.seq-head-rect`, `.seq-msg`,
+`.seq-msg.dashed`, `.seq-frame`, `.seq-tab`, `.seq-lbl`, `.seq-cond`, `.seq-title`) driven by
+theme variables — so light/dark theming and the arrow marker color update for free. No
+per-element colors are emitted.
+
+Sequences are **pre-rendered at init** (so print and instant tab-switch both work) and get
+`initZoomPan` for wheel-zoom/pan. They have no draggable elements.
 
 ---
 
@@ -607,7 +666,7 @@ Color mapping (Catppuccin Mocha):
 ## Quality Checklist (before delivery)
 
 - [ ] File opens in browser without JS errors
-- [ ] All 4 levels navigable via tabs and keyboard
+- [ ] All levels navigable via tabs and keyboard (Context, Container(s), Component(s), Sequenz, Code)
 - [ ] Drag & Drop works on all 3 diagram levels
 - [ ] Arrows follow elements during drag
 - [ ] Group boundaries resize during drag
@@ -623,3 +682,5 @@ Color mapping (Catppuccin Mocha):
 - [ ] Element tooltip shows why + pattern when available
 - [ ] Arrow tooltip shows payload + why when available
 - [ ] Async arrows all have payload tooltips
+- [ ] At least one Sequenz tab present; sequence renders with lifelines, messages and fragments
+- [ ] Sequence diagram follows the theme (readable in both dark and light mode)

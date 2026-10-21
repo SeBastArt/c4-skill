@@ -4,7 +4,7 @@
 
 ```json
 {
-  "version": "2.2",
+  "version": "2.3",
   "project": { ... },
   "functionalRequirements": [ ... ],
   "nfrs": [ ... ],
@@ -16,9 +16,14 @@
   "components": {
     "<container-id>": { "elements": [], "relationships": [], "groups": [] }
   },
-  "code": { "snippets": [] }
+  "code": { "snippets": [] },
+  "sequences": [ ... ]
 }
 ```
+
+`sequences` is **standard output** (v2.2): every architecture ships with at least one
+interaction/sequence diagram. Omitting it is only acceptable for a pure landscape model
+with no runtime flow. See "Sequence Diagrams" below.
 
 ### Migration von v1.0 / v2.0
 
@@ -35,6 +40,46 @@ Falls ein `"container"` (Singular) Objekt existiert, wird es automatisch migrier
 3. Falls kein Element mit `drillDown: "container"` gefunden wird, verwende den Schlüssel `"_default"`
 4. Entferne das alte `container`-Feld
 5. Aktualisiere `version` auf `"2.2"`
+
+### Migration v2.2 → v2.3
+
+v2.3 adds code evidence and provenance. All new fields are optional; a v2.2 file stays valid after
+changing `version` to `"2.3"`.
+
+## Evidence and Provenance (v2.3)
+
+Any element, relationship, code snippet, design decision, NFR, FR and sequence message may carry:
+
+```json
+{
+  "evidence": [
+    {
+      "resource": "repo://src/Orders/OrderService.cs#L40-L72",
+      "supports": "description | why | pattern | label | detail | decision | metric | code",
+      "kind": "defines | registers | calls | configures | tests",
+      "version": "opaque — written by `scripts/c4_evidence.py stamp`, never by hand"
+    }
+  ],
+  "unanchored": "reason, only when evidence is empty on purpose (a role, a physical action)",
+  "origin": "derived | decided",
+  "decidedIn": "repo://docs/adr/0004-asl.md#L10-L30"
+}
+```
+
+- `resource` — repository-relative `repo://` path with a line range. Same format as OpenWiki claims.
+- `supports` — which field of the item this range proves. One statement, one range: an item that
+  says three things needs up to three entries.
+- `kind` — what the range shows. `defines`/`registers` prove a mechanism exists; only `calls`
+  (or `tests` against the running path) proves it takes effect. Use this to avoid claiming that
+  registered code is used.
+- `version` — relocation anchor; lets `verify` tell moved code from changed code.
+- `origin` — `derived` (default, inferred from code) or `decided` (agreed in a workshop, ADR or
+  design document). Decided items describe the **target**; their `evidence` shows how far the code
+  implements it. A gap between the two is a finding, not an error in the model.
+- `decidedIn` — required when `origin` is `decided`: where the decision is written down.
+
+Evidence never points to `doc/architecture/` (the model itself) or `openwiki/` (another derived
+view). Only code, tests and configuration count.
 
 ## Project
 
@@ -71,7 +116,7 @@ Falls ein `"container"` (Singular) Objekt existiert, wird es automatisch migrier
 ```json
 {
   "id": "nfr-01",
-  "category": "Performance | Availability | Latency | Consistency | Scalability | Security | Observability | Auditability",
+  "category": "Performance | Availability | Latency | Consistency | Scalability | Security | Observability | Auditability | Testability | Maintainability | Reliability",
   "title": "string — short name (e.g., 'Peak Load')",
   "metric": "string (required) — measurable target (e.g., '20k TPS weltweit')",
   "approach": "string — how the architecture addresses this",
@@ -274,7 +319,7 @@ Groups are visual containers that cluster related elements. They render as a lab
 {
   "id": "string (required)",
   "parentElement": "string (required) — element ID this snippet belongs to",
-  "language": "sql | typescript | javascript | java | go | python | yaml | json",
+  "language": "sql | typescript | javascript | java | kotlin | go | python | csharp | yaml | json",
   "title": "string (required) — what does this snippet show?",
   "why": "string (required) — WHY is this code architecturally relevant? What design decision does it prove?",
   "code": "string (required) — the actual code, use \\n for newlines",
@@ -286,6 +331,56 @@ Groups are visual containers that cluster related elements. They render as a lab
   ]
 }
 ```
+
+## Sequence Diagrams
+
+`sequences` is a **top-level array** — one entry per interaction scenario. At least one
+sequence is standard output (the primary end-to-end flow); add more for alternative paths
+or secondary use cases. Each sequence renders as its own "Sequenz" tab (UML-style: lifelines,
+messages, combined fragments). Rendering is fully data-driven — `renderSequence()` in the
+engine computes all coordinates; the generator only supplies data + an empty
+`<svg id="svg-sequence-<id>">` shell.
+
+```json
+{
+  "id": "seq-main",
+  "title": "string (required) — heading shown top-left in the diagram",
+  "tabLabel": "string (optional) — short label for the tab (default: title)",
+  "note": "string (optional) — italic subtitle under the title (e.g. a global precondition)",
+  "participants": [
+    { "id": "p-vertrieb", "name": "Vertrieb" }
+  ],
+  "messages": [
+    {
+      "from": "p-vertrieb",
+      "to": "p-chat",
+      "label": "string (required) — what is sent",
+      "type": "sync | return | self"
+    }
+  ],
+  "fragments": [
+    {
+      "type": "alt | par | loop | opt",
+      "condition": "string — guard/label shown in the fragment header (e.g. '[je Artikelnr.]')",
+      "from": "p-agent",
+      "to": "p-fileshare",
+      "startMessage": 8,
+      "endMessage": 13
+    }
+  ]
+}
+```
+
+**Message `type`:**
+- `sync` — solid line with arrowhead (a call). Default when omitted.
+- `return` (aliases: `reply`) — dashed line (a response). A message with `"async": true` also renders dashed.
+- `self` — a self-call loop (from === to also triggers this); label sits to the right.
+
+**Fragments** draw a labeled box (combined fragment) behind a contiguous range of messages:
+- `from` / `to` — participant IDs marking the left/right span of the box.
+- `startMessage` / `endMessage` — **0-based indices into this sequence's `messages` array** for the first and last enclosed message.
+
+**Participants** are drawn left→right in array order. Keep names short (≤ ~18 chars) so heads don't overlap; column pitch is fixed at 180px.
 
 ## Consistency Rules (enforced by validation)
 
@@ -303,3 +398,7 @@ Groups are visual containers that cluster related elements. They render as a lab
 12. Every FR `actor` must reference an existing context-level `person` or `external_person` element
 13. Every key in `containers` should reference an existing context-level `system` element ID (or be `_default` for backward compat)
 14. Every system element with `drillDown` starting with `"container"` must have a corresponding entry in `containers`
+15. Every `sequences[].messages[].from`/`to` must reference a `participants[].id` within the same sequence
+16. Every `sequences[].fragments[].from`/`to` must reference a `participants[].id`, and `startMessage`/`endMessage` must be valid indices into that sequence's `messages` array (`startMessage` ≤ `endMessage`)
+17. Every sequence `id` must be unique; every `participants[].id` must be unique within its sequence
+18. At least one sequence should be present (warn if `sequences` is empty or absent)
