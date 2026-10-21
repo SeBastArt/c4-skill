@@ -6,11 +6,14 @@ Interactive C4 architecture diagrams as self-contained HTML files — from NFRs 
 
 - **10-Phase Workshop**: Scope → FRs → NFRs → Context → Container → Component → Code → Decisions → Validate → Render
 - **Self-contained HTML output**: SVG diagrams with drag & drop, zoom/pan, tooltips, drill-down, dark/light theme — zero dependencies
-- **Multi-system support**: One container view per system (`containers` dictionary, v2.2)
+- **Multi-system support**: One container view per system (`containers` dictionary)
+- **Code evidence (v2.3)**: every model item can cite the code lines that back it (`evidence: repo://path#Lx-Ly`); `scripts/c4_evidence.py` stamps, verifies and relocates them (uses OpenWiki's resolver, Node), so a model shows when the code moved on
+- **Code Mode and Verify Mode**: derive a model from an existing repository without questions, and keep it current after code changes
 - **Architecture knowledge**: 32 patterns, 10 paradigms, decision frameworks (ADR, Canvas, ATAM, TARA, DCAR, LASR, Risk Storming, Pre-Mortem, Fitness Functions, Scorecards)
 - **Requirements as first-class citizens**: Functional Requirements (MoSCoW + acceptance criteria) and NFRs with measurable metrics, both traceable to elements and decisions
 - **Code annotations**: Every code snippet explains *why* it's architecturally relevant
-- **49 validation rules in 7 categories**: Structural integrity, completeness, cross-level consistency, NFR/decision traceability, why-traceability, FR traceability, visual quality
+- **64 validation rules in 8 categories**: Structural integrity, completeness, cross-level consistency, NFR/decision traceability, why-traceability, FR traceability, visual quality, evidence for models of existing code
+- **Scripts** (`skills/architect/scripts/`, standard-library Python): `c4_validate.py`, `c4_render.py`, `c4_check_page.py` (Playwright, optional), `c4_evidence.py`
 - **6 modes**: Full Workshop, Quick, Render-Only, Validate-Only, Amend, Export (Structurizr DSL)
 
 ## Installation

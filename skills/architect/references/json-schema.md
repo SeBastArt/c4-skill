@@ -4,7 +4,7 @@
 
 ```json
 {
-  "version": "2.2",
+  "version": "2.3",
   "project": { ... },
   "functionalRequirements": [ ... ],
   "nfrs": [ ... ],
@@ -41,6 +41,46 @@ Falls ein `"container"` (Singular) Objekt existiert, wird es automatisch migrier
 4. Entferne das alte `container`-Feld
 5. Aktualisiere `version` auf `"2.2"`
 
+### Migration v2.2 → v2.3
+
+v2.3 adds code evidence and provenance. All new fields are optional; a v2.2 file stays valid after
+changing `version` to `"2.3"`.
+
+## Evidence and Provenance (v2.3)
+
+Any element, relationship, code snippet, design decision, NFR, FR and sequence message may carry:
+
+```json
+{
+  "evidence": [
+    {
+      "resource": "repo://src/Orders/OrderService.cs#L40-L72",
+      "supports": "description | why | pattern | label | detail | decision | metric | code",
+      "kind": "defines | registers | calls | configures | tests",
+      "version": "opaque — written by `scripts/c4_evidence.py stamp`, never by hand"
+    }
+  ],
+  "unanchored": "reason, only when evidence is empty on purpose (a role, a physical action)",
+  "origin": "derived | decided",
+  "decidedIn": "repo://docs/adr/0004-asl.md#L10-L30"
+}
+```
+
+- `resource` — repository-relative `repo://` path with a line range. Same format as OpenWiki claims.
+- `supports` — which field of the item this range proves. One statement, one range: an item that
+  says three things needs up to three entries.
+- `kind` — what the range shows. `defines`/`registers` prove a mechanism exists; only `calls`
+  (or `tests` against the running path) proves it takes effect. Use this to avoid claiming that
+  registered code is used.
+- `version` — relocation anchor; lets `verify` tell moved code from changed code.
+- `origin` — `derived` (default, inferred from code) or `decided` (agreed in a workshop, ADR or
+  design document). Decided items describe the **target**; their `evidence` shows how far the code
+  implements it. A gap between the two is a finding, not an error in the model.
+- `decidedIn` — required when `origin` is `decided`: where the decision is written down.
+
+Evidence never points to `doc/architecture/` (the model itself) or `openwiki/` (another derived
+view). Only code, tests and configuration count.
+
 ## Project
 
 ```json
@@ -76,7 +116,7 @@ Falls ein `"container"` (Singular) Objekt existiert, wird es automatisch migrier
 ```json
 {
   "id": "nfr-01",
-  "category": "Performance | Availability | Latency | Consistency | Scalability | Security | Observability | Auditability",
+  "category": "Performance | Availability | Latency | Consistency | Scalability | Security | Observability | Auditability | Testability | Maintainability | Reliability",
   "title": "string — short name (e.g., 'Peak Load')",
   "metric": "string (required) — measurable target (e.g., '20k TPS weltweit')",
   "approach": "string — how the architecture addresses this",
@@ -279,7 +319,7 @@ Groups are visual containers that cluster related elements. They render as a lab
 {
   "id": "string (required)",
   "parentElement": "string (required) — element ID this snippet belongs to",
-  "language": "sql | typescript | javascript | java | go | python | yaml | json",
+  "language": "sql | typescript | javascript | java | kotlin | go | python | csharp | yaml | json",
   "title": "string (required) — what does this snippet show?",
   "why": "string (required) — WHY is this code architecturally relevant? What design decision does it prove?",
   "code": "string (required) — the actual code, use \\n for newlines",

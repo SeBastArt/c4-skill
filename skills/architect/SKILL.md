@@ -1,9 +1,25 @@
 ---
 name: c4
-description: Use when the user wants to create, design, model, visualize, validate, amend, or export a software architecture or C4 diagram — including rendering or checking an existing architecture.json. Triggers include "C4", "Architektur", "architecture", "Systemarchitektur", "system design", "Architekturdiagramm", architecture workshop, NFR/FR modeling, Structurizr export.
+description: Use when the user wants to create, design, model, visualize, validate, amend, or export a software architecture or C4 diagram — including rendering or checking an existing architecture.json. Also derives and maintains a code-backed model of an existing repository (Code Mode, Verify Mode; works alongside OpenWiki). Triggers include "C4", "C4 aus dem Code", "Architektur dieses Repos", "Architektur", "architecture", "Systemarchitektur", "system design", "Architekturdiagramm", architecture workshop, NFR/FR modeling, Structurizr export.
 ---
 
 # C4 Architecture Skill
+
+## Pick the mode first
+
+| Situation | Mode | Questions to the user |
+|---|---|---|
+| A repository exists and has no model yet | **Code Mode** (below) | none — the code answers |
+| The repository has `doc/architecture/architecture.json` and its code changed | **Verify Mode** (below); the diff is the PBI's diff (`git diff <base branch>...HEAD`) | none |
+| A model exists and the user wants a change | Amend Mode | the change only |
+| No code yet, an architecture to design | Guided Architecture Workshop (Phases 1–10) | one confirmation per phase |
+| Render, validate or export an existing model | Render-Only, Validate-Only, Export Mode | none |
+
+The workshop phases below are written as questions to a user. In Code Mode and Verify Mode the
+code answers them; do not ask.
+
+Script paths below are written for an agent workspace (`.agents/skills/c4/scripts/...`). In Claude
+Code the skill lives in `~/.claude/skills/c4` or in the plugin folder; use that folder instead.
 
 ## Overview
 
@@ -12,8 +28,8 @@ This skill creates **interactive C4 architecture diagrams** as self-contained HT
 **Load references on-demand per phase — NOT all at once:**
 
 ### Tier 1 — Always (minimal baseline):
-- `references/json-schema.md` — Data model definition (v2.2, multi-container, multi-component, FRs + NFRs)
-- `references/quality.md` — Validation rules (7 categories S/C/X/T/W/F/V — rule count and details there)
+- `references/json-schema.md` — Data model definition (v2.3, multi-container, multi-component, FRs + NFRs, code evidence)
+- `references/quality.md` — Validation rules (8 categories S/C/X/T/W/F/V/E — E for models of existing code)
 
 ### Tier 2 — Phase 3 (NFR collection):
 - `references/pattern-catalog.md` — Navigator: NFR→Pattern Quick-Reference, Pattern-Stacks
@@ -341,14 +357,16 @@ For each sequence, capture:
 
 **Goal:** Assemble everything into `architecture.json` and validate.
 
-1. Build the complete JSON following `references/json-schema.md` (v2.2 format)
+1. Build the complete JSON following `references/json-schema.md` (v2.3 format; v2.2 without evidence fields)
 2. Use `containers` dictionary for container views (one per system) and `components` dictionary for component views
 3. Ensure all IDs use correct prefixes (`ctx-`, `cnt-`, `cmp-<container>-`)
 4. Ensure all relationships use `async: true/false` (boolean, not `protocol: "async"`)
 5. Include the `sequences` array (≥ 1 sequence — standard output). Validate that every message/fragment `from`/`to` references a participant in the same sequence and that fragment message indices are in range.
-6. Run ALL validation rules from `references/quality.md` (all 7 categories)
-6. Fix any errors, warn about warnings
-7. Write the validated `architecture.json` to disk
+6. Write `architecture.json` to disk and run `py .agents/skills/c4/scripts/c4_validate.py <model>` — it checks every
+   rule a script can decide (structure, references, counts, evidence format; exit 1 on errors).
+   Then judge the remaining rules from `references/quality.md` by reading (is a `why` convincing,
+   does evidence carry its statement). Category E only when the model describes existing code.
+7. Fix any errors, warn about warnings, re-run the script until it reports no errors
 
 **Validation is not optional.** Every architecture must pass at minimum:
 - All structural integrity rules (Category S) — zero errors
@@ -363,7 +381,15 @@ For each sequence, capture:
 
 **Architecture:** All SVG content is rendered dynamically from a JavaScript `C4` data object. No hardcoded SVG paths. This enables drag & drop with auto-updating arrows and groups.
 
-**Steps:**
+**Default: use the script.** `py .agents/skills/c4/scripts/c4_render.py <model> <out.html>` performs steps 1–10
+below deterministically (engine and CSS from engine.js.md, palette from render-spec.md, skeleton
+from base.html, evidence passed through). Assemble by hand only when changing the renderer itself.
+Then `py .agents/skills/c4/scripts/c4_check_page.py <out.html>` (Playwright, optional): no console errors,
+every tab draws. Look at the screenshots or the page once: the layout engine places elements from
+position hints and does not resolve overlaps on crowded views — adjust `position` hints (or split a
+view above ~12 elements) when boxes overlap or leave the canvas.
+
+**Steps (what the script does):**
 1. Load `templates/base.html` as skeleton
 2. Load `references/engine.js.md` — use the **complete rendering engine code** from this reference
 3. Follow `references/render-spec.md` for all visual and interaction decisions
@@ -417,6 +443,101 @@ For each sequence, capture:
 ## Quick Mode
 
 If the user says "quick" or provides a very detailed specification upfront, compress Phases 1-8b into a single analysis step (still author at least one sequence). Still validate (Phase 9) and render (Phase 10) with full rigor.
+
+## Code Mode (model an existing repository)
+
+Run the scripts from the workspace root as `py .agents/skills/c4/scripts/<script> ...` with relative paths (`workspace/<repo>/...`), one command per terminal call: VS Code approves exactly that form without asking.
+
+Use when the architecture is to be **derived from code**, not designed in a workshop
+("model this repo", "C4 aus dem Code", onboarding to an unknown code base). The workshop phases
+become one analysis step, as in Quick Mode, but every statement must be bound to code.
+
+1. **Derive** — Phases 1–8b from code, tests and configuration only. Read `doc/` and `openwiki/`
+   for orientation, never as a source. Mark guesses as you go. The workshop questions are answered
+   from the code instead of asked:
+   - Scope and actors (1, 4): entry points, hosting, who calls in (API clients, UIs, schedulers).
+   - FRs (2): public endpoints, commands, handlers and the tests that exercise them; priority
+     `must` for what the entry points serve, never invented features.
+   - NFRs (3): timeouts, retries, limits, caching, security settings and tests that assert them. Any
+     category fits (also testability, maintainability); the metric is the value in code or config,
+     not a target nobody set.
+   - Containers and components (5, 6): deployable units and projects; inside, the classes that own
+     a responsibility — not every class.
+   - Decisions (8): ADRs if present, otherwise choices visible in code (library, pattern, mode
+     switch). Alternatives only if the code or its history names them.
+   - Sequences (8b): one per main entry flow, traced through the actual calls.
+2. **Assemble** — Phase 9 steps 1–5, `version: "2.3"`.
+3. **Bind evidence (Phase 9b)** — mandatory, see below.
+4. **Validate** — all categories including E.
+5. **Stamp** — `py .agents/skills/c4/scripts/c4_evidence.py stamp <model> --root <repo>` (needs Node and
+   `OPENWIKI_CLI`; without them skip and say so — `check` still works). Stamping writes `version`
+   into `architecture.json`. From then on edit that file; a model regenerated from a helper script
+   loses the versions — re-stamp after any regeneration.
+6. **Render** — Phase 10. Write both files to `doc/architecture/` in the repository
+   (`architecture.json`, `architecture.html`). Never into `openwiki/`: OpenWiki deletes everything
+   there except `INSTRUCTIONS.md` on init.
+7. **Report** — counts per kind (bound/unbound), the unbound list with reasons, and every place
+   where binding evidence changed the model (step 3). Security-relevant observations go to the
+   report only, never into the model.
+
+### Phase 9b: Bind Evidence
+
+Binding evidence is the verification step of the model, not paperwork. In the first trial it found
+five statements the code contradicts (an assumed TLS that is optional, a retry that never fires, an
+error path the model missed).
+
+For every element, relationship, snippet, design decision, NFR and sequence message:
+1. Read the code that should carry the statement — the actual lines, after checking the file length.
+2. Add one evidence entry per statement (`supports`), 3–40 lines each; set `kind`. Usually one to
+   three entries per item — more when the item really states more (a metric plus its default).
+3. If the code says something else: **correct the model**, and list the correction in the report.
+4. If nothing in the code carries it (a person, a physical action, an assumption): `evidence: []`
+   and `"unanchored": "<reason>"` on the item — the validator then knows it is deliberate.
+
+**Practical:** a model of 100+ items is easiest to write as a Python dict in a scratch script that
+dumps the JSON (outside the repository). Once stamped, edit `architecture.json` directly.
+5. Snippets: evidence on the original lines the snippet was taken from.
+6. Run `py .agents/skills/c4/scripts/c4_evidence.py check <model> --root <repo>` until it exits 0, and
+   `c4_validate.py` for the E rules (E-09 flags ranges outside 3–40 lines).
+
+## Verify Mode (after code changes)
+
+Trigger: "prüfe das Modell", "ist das C4 noch aktuell", or as part of an OpenWiki update.
+
+1. `py .agents/skills/c4/scripts/c4_evidence.py verify <model> --root <repo> --fix-moved` — moved evidence gets its
+   new line numbers automatically. The output lists only what needs you: each `changed` or `gone` entry with the
+   item's `name`, the `text` its evidence supports and `at`, its lines in `architecture.json`: read only those lines
+   (or `c4_evidence.py show <model> <item> ...`, which quotes them exactly for a patch) instead of the whole file;
+   `summary` keeps the full counts.
+2. For every listed entry: re-read the code at `current`, amend the item (Amend Mode rules). Then
+   `verify --fix-moved --accept-changed <item> ...` (e.g. `element:cmp-x`) re-stamps exactly the amended items in the
+   same call; they count as `accepted`, and exit 0 means nothing is left. A `gone` entry has no `current`: find the
+   code again, set `resource` to its new lines, delete the entry's `version` and run `stamp` (a resource changed
+   with the old version left in place stays `gone`). Add entries for new statements and `stamp` them.
+3. **Mandatory:** search the model for what the diff changed. `verify` only sees evidence lines; in
+   practice most false statements sat elsewhere (a default cited in an NFR metric, an exit code in an
+   acceptance criterion). Take every changed identifier, constant, config key and literal value from
+   `git diff <base branch>...HEAD` (the PBI's diff; in a scheduled run, the diff since the last commit that touched `doc/architecture/`) and search `architecture.json` for it (`rg -n "<old value>"`). Amend every hit, then repeat the search: it must return nothing for an old value — one fixed hit is not enough, the same phrase often stands in several items.
+   **New structure gets its own item.** A new class or service with its own responsibility at the
+   level the model already draws (the existing components show the grain), a new external system or
+   a new runtime dependency becomes an element with relationships and evidence (Amend Mode rules,
+   then `stamp`); naming it in another item's text is not enough.
+4. Validate, render, `c4_check_page.py`, again after every later change to the model. Report what changed in the model and why, and how each
+   false statement was found (verify, search, reading).
+
+## Working with OpenWiki
+
+C4 model and OpenWiki are two views derived from the same code. Neither is evidence for the other.
+
+- Both cite code with the same `repo://…#L` format; the C4 evidence uses OpenWiki's resolver, so
+  both age the same way.
+- After an OpenWiki update, `py .agents/skills/c4/scripts/c4_evidence.py pairs <model> --claims <repo>/openwiki/.claims`
+  lists, per model item, the wiki claims on the same lines. Read the items whose claims changed in
+  the update; a contradiction usually means the model is behind.
+- The model may give OpenWiki structure (containers and components as a page plan, sequences as
+  flows to explain), but wiki claims must cite code, never `doc/architecture/`.
+- Decided items (`origin: "decided"`) are where the two help most: a fresh agent given the decision
+  and its evidence finds out whether the code implements it.
 
 ## Render-Only Mode
 

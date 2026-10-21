@@ -78,7 +78,7 @@ function svgShape(el, colors) {
   const textColor = c.text || '#fff';
 
   if (el.type === 'person' || el.type === 'external_person') {
-    return `<g class="c4-element" data-id="${el.id}" tabindex="0" transform="translate(${el.x},${el.y})">
+    return `<g class="c4-element" data-id="${esc(el.id)}" tabindex="0" transform="translate(${el.x},${el.y})">
       <circle cx="60" cy="20" r="16" fill="${c.fill}" stroke="${c.stroke}" stroke-width="2"/>
       <line x1="60" y1="36" x2="60" y2="75" stroke="${c.stroke}" stroke-width="2"/>
       <line x1="30" y1="55" x2="90" y2="55" stroke="${c.stroke}" stroke-width="2"/>
@@ -92,7 +92,7 @@ function svgShape(el, colors) {
 
   if (el.type === 'database') {
     const ry = 12;
-    return `<g class="c4-element" data-id="${el.id}" tabindex="0" transform="translate(${el.x},${el.y})">
+    return `<g class="c4-element" data-id="${esc(el.id)}" tabindex="0" transform="translate(${el.x},${el.y})">
       <rect x="0" y="${ry}" width="${el.w}" height="${el.h - ry}" fill="${c.fill}" stroke="${c.stroke}" stroke-width="2"/>
       <ellipse cx="${el.w/2}" cy="${ry}" rx="${el.w/2}" ry="${ry}" fill="${c.fill}" stroke="${c.stroke}" stroke-width="2"/>
       <ellipse cx="${el.w/2}" cy="${el.h}" rx="${el.w/2}" ry="${ry}" fill="${c.fill}" stroke="${c.stroke}" stroke-width="2"/>
@@ -104,7 +104,7 @@ function svgShape(el, colors) {
   if (el.type === 'gateway') {
     const hw = el.w/2, hh = el.h/2, inset = 20;
     const pts = `${hw},0 ${el.w - inset},${hh * 0.4} ${el.w - inset},${hh * 1.6} ${hw},${el.h} ${inset},${hh * 1.6} ${inset},${hh * 0.4}`;
-    return `<g class="c4-element" data-id="${el.id}" tabindex="0" transform="translate(${el.x},${el.y})">
+    return `<g class="c4-element" data-id="${esc(el.id)}" tabindex="0" transform="translate(${el.x},${el.y})">
       <polygon points="${pts}" fill="${c.fill}" stroke="${c.stroke}" stroke-width="2" filter="url(#ds)"/>
       <text x="${hw}" y="${hh - 4}" text-anchor="middle" fill="${textColor}" font-size="13" font-weight="600">${esc(el.name)}</text>
       <text x="${hw}" y="${hh + 12}" text-anchor="middle" fill="${textColor}" font-size="10" opacity="0.85">${truncate(el.desc, 28)}</text>
@@ -116,7 +116,7 @@ function svgShape(el, colors) {
   const dashAttr = (el.type === 'message_broker' || el.type === 'queue') ? ' stroke-dasharray="6,3"' : '';
   const rx = (el.type.startsWith('cmp') || ['controller','service_class','repository','event_handler','background_worker','validator','factory','facade','adapter'].includes(el.type)) ? 4 : 8;
   const sw = rx === 4 ? 1.5 : 2;
-  return `<g class="c4-element" data-id="${el.id}" tabindex="0" transform="translate(${el.x},${el.y})">
+  return `<g class="c4-element" data-id="${esc(el.id)}" tabindex="0" transform="translate(${el.x},${el.y})">
     <rect width="${el.w}" height="${el.h}" rx="${rx}" fill="${c.fill}" stroke="${c.stroke}" stroke-width="${sw}"${dashAttr} filter="url(#ds)"/>
     <text x="${el.w/2}" y="${el.h/2 - 6}" text-anchor="middle" fill="${textColor}" font-size="13" font-weight="600">${esc(el.name)}</text>
     <text x="${el.w/2}" y="${el.h/2 + 10}" text-anchor="middle" fill="${textColor}" font-size="10" opacity="0.85">${truncate(el.desc, 30)}</text>
@@ -124,7 +124,9 @@ function svgShape(el, colors) {
   </g>`;
 }
 
-function esc(s) { return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+// Every model value that reaches innerHTML or an attribute goes through esc() — model text is
+// written by agents from repository content and must never become markup.
+function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function truncate(s, max) { s = s || ''; return s.length > max ? esc(s.slice(0, max - 1)) + '...' : esc(s); }
 
 // ===== Arrow Rendering =====
@@ -230,7 +232,7 @@ function renderSequence(seqId) {
   const P = seq.participants || [];
   const msgs = seq.messages || [];
   const frags = seq.fragments || [];
-  const STEP = 180, HEADW = 156, X0 = 110, Y0 = 120, DY = 42, FRAGHEAD = 44;
+  const STEP = 180, HEADW = 156, X0 = 110, Y0 = 152, DY = 42, FRAGHEAD = 44;
   const cx = P.map((_, i) => X0 + i * STEP);
   const idx = {}; P.forEach((p, i) => { idx[p.id] = i; });
   // extra vertical space above a message that opens a fragment (for its header)
@@ -344,7 +346,7 @@ function renderCodeLevel() {
     const cardW = colWidths[col], cardH = rowHeights[row];
     const codeHtml = highlightCode(sn.code || '', sn.lang || 'text');
     const whyText = sn.why ? truncate(sn.why, 60) : '';
-    layer.innerHTML += `<g transform="translate(${sx},${sy})" class="code-card" data-snippet-id="${sn.id}">
+    layer.innerHTML += `<g transform="translate(${sx},${sy})" class="code-card" data-snippet-id="${esc(sn.id)}">
       <rect width="${cardW}" height="${cardH}" rx="8" fill="#1E1E2E" stroke="#313244" stroke-width="1.5"/>
       <rect width="${cardW}" height="32" rx="8" fill="#313244"/>
       <rect y="24" width="${cardW}" height="8" fill="#313244"/>
@@ -371,11 +373,20 @@ function highlightCode(code, lang) {
     placeholders.push(`<span style="${style}">${match}</span>`);
     return id;
   }
-  // Block comments (/* ... */)
-  s = s.replace(/\/\*[\s\S]*?\*\//g, m => ph(m, 'color:#6C7086;font-style:italic'));
-  // Line comments (// or -- or #)
-  s = s.replace(/(\/\/.*|--.*)/g, m => ph(m, 'color:#6C7086;font-style:italic'));
-  if (['python','py','yaml','yml','bash','sh','shell'].includes(lang)) {
+  // Comments are language-aware: '//' would corrupt JSON/YAML values like
+  // XPath expressions or URLs ("//Product...", "https://...")
+  const langNorm = (lang || '').toLowerCase();
+  if (['typescript','javascript','ts','js','java','kotlin','kt','go','golang','sql'].includes(langNorm)) {
+    // Block comments (/* ... */)
+    s = s.replace(/\/\*[\s\S]*?\*\//g, m => ph(m, 'color:#6C7086;font-style:italic'));
+  }
+  if (['typescript','javascript','ts','js','java','kotlin','kt','go','golang'].includes(langNorm)) {
+    s = s.replace(/(\/\/.*)/g, m => ph(m, 'color:#6C7086;font-style:italic'));
+  }
+  if (langNorm === 'sql') {
+    s = s.replace(/(--.*)/g, m => ph(m, 'color:#6C7086;font-style:italic'));
+  }
+  if (['python','py','yaml','yml','bash','sh','shell'].includes(langNorm)) {
     s = s.replace(/(#.*)/g, m => ph(m, 'color:#6C7086;font-style:italic'));
   }
   // Double-quoted strings
@@ -397,6 +408,12 @@ function highlightCode(code, lang) {
       '<span style="color:#F9E2AF">$&</span>');
     s = s.replace(/\.(\w+)\(/g, '.<span style="color:#89B4FA">$1</span>(');
     s = s.replace(/\b(function|const|let|var)\s+(\w+)/g, '$1 <span style="color:#89B4FA">$2</span>');
+  } else if (['csharp','cs','c#'].includes(norm)) {
+    s = s.replace(/\b(public|private|protected|internal|static|readonly|sealed|abstract|virtual|override|partial|class|record|struct|interface|enum|namespace|using|new|return|if|else|for|foreach|while|do|switch|case|break|default|try|catch|finally|throw|when|async|await|var|const|this|base|is|as|in|out|ref|null|true|false|get|set|init|required|where|yield|lock|typeof|nameof)\b/g,
+      '<span style="color:#CBA6F7">$&</span>');
+    s = s.replace(/\b(string|int|long|double|float|decimal|bool|byte|char|object|void|Task|ValueTask|CancellationToken|TimeSpan|DateTime|DateTimeOffset|IEnumerable|IReadOnlyList|List|Dictionary|Exception)\b/g,
+      '<span style="color:#F9E2AF">$&</span>');
+    s = s.replace(/\.(\w+)\(/g, '.<span style="color:#89B4FA">$1</span>(');
   } else if (['java','kotlin','kt'].includes(norm)) {
     s = s.replace(/\b(public|private|protected|static|final|abstract|class|interface|extends|implements|new|return|if|else|for|while|do|switch|case|break|default|try|catch|finally|throw|throws|import|package|void|this|super|synchronized|volatile|transient|enum|instanceof|assert|continue|native|strictfp)\b/g,
       '<span style="color:#CBA6F7">$&</span>');
@@ -422,8 +439,9 @@ function highlightCode(code, lang) {
     s = s.replace(/\b(true|false|null)\b/g, '<span style="color:#FAB387">$&</span>');
   }
 
-  // Phase 3: Numbers (only outside placeholders)
-  s = s.replace(/\b(\d+\.?\d*)\b/g, '<span style="color:#FAB387">$1</span>');
+  // Phase 3: Numbers (only outside placeholders — lookarounds keep the
+  // \x00<index>\x00 placeholder tokens intact, otherwise Phase 4 cannot restore them)
+  s = s.replace(/(?<![\w\x00])(\d+\.?\d*)(?![\w\x00])/g, '<span style="color:#FAB387">$1</span>');
 
   // Phase 4: Restore placeholders
   placeholders.forEach((val, i) => {
@@ -477,6 +495,22 @@ function initDragAndDrop(svgId, levelData) {
   svg.addEventListener('mouseleave', endDrag);
 }
 
+// ===== Evidence (code sources of a statement) =====
+function evidenceHtml(item) {
+  const ev = item.evidence || [];
+  let html = '';
+  if (item.origin === 'decided') html += `<br><span style="color:#FAB387;font-size:10px">beschlossen${item.decidedIn ? ': ' + esc(item.decidedIn.replace('repo://', '')) : ''}</span>`;
+  if (!ev.length) return html + '<br><span style="color:#F38BA8;font-size:10px">unbelegt — nicht im Code nachgewiesen</span>';
+  html += '<br><span style="color:#AAA;font-size:10px">Belege:</span>';
+  ev.slice(0, 4).forEach(e => {
+    const r = typeof e === 'string' ? e : e.resource;
+    const sup = typeof e === 'string' ? '' : (e.supports ? ' (' + esc(e.supports) + ')' : '');
+    html += `<br><span style="font-family:monospace;font-size:10px;color:#94E2D5">${esc(r.replace('repo://', ''))}${sup}</span>`;
+  });
+  if (ev.length > 4) html += `<br><span style="color:#AAA;font-size:10px">… ${ev.length - 4} weitere</span>`;
+  return html;
+}
+
 // ===== Rich Tooltip (Element) =====
 function showElementTooltip(el, x, y) {
   const tip = document.querySelector('.tooltip');
@@ -499,6 +533,7 @@ function showElementTooltip(el, x, y) {
       if (dd) html += `<span style="color:#F9E2AF;font-size:10px">→ ${esc(dd.id)}: ${esc(dd.title)}</span><br>`;
     });
   }
+  html += evidenceHtml(el);
   tip.innerHTML = html;
   tip.style.left = (x + 14) + 'px';
   tip.style.top = (y + 18) + 'px';
@@ -517,6 +552,7 @@ function showArrowTooltip(rel, x, y) {
     const dd = (C4.designDecisions || []).find(d => d.id === rel.relatedDecision);
     if (dd) html += `<br><span style="color:#F9E2AF;font-size:10px">→ ${esc(dd.id)}: ${esc(dd.title)}</span>`;
   }
+  html += evidenceHtml(rel);
   tip.innerHTML = html;
   tip.style.left = (x + 14) + 'px';
   tip.style.top = (y + 18) + 'px';
@@ -665,9 +701,9 @@ function switchLevel(levelKey) {
   // Render breadcrumb
   document.querySelector('.breadcrumb').innerHTML = crumbs.map((c, i) => {
     if (i < crumbs.length - 1) {
-      return `<span class="breadcrumb-link" onclick="switchLevel('${c.key}')">${c.label}</span>`;
+      return `<span class="breadcrumb-link" onclick="switchLevel('${esc(c.key)}')">${esc(c.label)}</span>`;
     }
-    return `<span>${c.label}</span>`;
+    return `<span>${esc(c.label)}</span>`;
   }).join(' <span class="breadcrumb-sep">\u2192</span> ');
 }
 
@@ -952,9 +988,13 @@ function toggleTheme() {
   // Update marker fill (CSS can't reliably style marker internals)
   document.querySelectorAll('#af polygon').forEach(p => p.setAttribute('fill', getComputedStyle(html).getPropertyValue('--arrow-color').trim()));
   // Re-render arrows to pick up CSS changes
-  const svgId = currentLevel.startsWith('component:') ? 'svg-component-' + currentLevel.split(':')[1] : 'svg-' + currentLevel;
-  const levelData = currentLevel.startsWith('component:') ? C4.levels.components[currentLevel.split(':')[1]] : C4.levels[currentLevel];
-  if (levelData) { renderArrows(svgId, levelData); renderGroups(svgId, levelData); }
+  if (currentLevel.startsWith('sequence:')) {
+    renderSequence(currentLevel.split(':')[1]);
+  } else {
+    const svgId = getSvgId(currentLevel);
+    const levelData = getLevelData(currentLevel);
+    if (svgId && levelData) { renderArrows(svgId, levelData); renderGroups(svgId, levelData); }
+  }
   // Persist preference
   try { localStorage.setItem('c4-theme', next); } catch(e) {}
 }

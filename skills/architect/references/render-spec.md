@@ -197,6 +197,8 @@ The rendering engine transforms `architecture.json` fields to the C4 JS object:
 | JSON field | C4 JS field | Notes |
 |---|---|---|
 | `element.description` | `desc` | Shortened key name |
+| `evidence` (element, relationship, snippet, decision) | `evidence` | Copy unchanged — the tooltip lists the sources; never drop it |
+| `origin`, `decidedIn` | `origin`, `decidedIn` | Copy unchanged — tooltip marks decided items |
 | `element.technology` | `tech` | Shortened key name |
 | `element.position` | `x, y, w, h` | Computed by layout algorithm |
 | `relationship.async` | `async` | Boolean, NOT protocol string |
