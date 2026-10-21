@@ -225,29 +225,39 @@ def _block(lines: list[str], anchor: int) -> tuple[int, int] | None:
     return None if start is None or end is None else (start, end)
 
 
+def _norm_obj(obj: dict) -> dict:
+    """An item object with bare-string evidence written as {"resource": ...}, for comparison."""
+    out = dict(obj)
+    if isinstance(out.get("evidence"), list):
+        out["evidence"] = [{"resource": e} if isinstance(e, str) else e for e in out["evidence"]]
+    return out
+
+
 def locate(text: str, model: dict, ref: str) -> tuple[int, int] | None:
     """1-based first and last line of an item (element:x, relationship:a->b:label, snippet:x,
-    decision:x, nfr:x, fr:x) in the model file as written with indent 2; None when not found."""
-    kind, _, key = ref.partition(":")
-    lines = text.splitlines()
-    if kind == "relationship":
-        src, _, rest = key.partition("->")
-        dst, _, label = rest.partition(":")
-        for i, line in enumerate(lines):
-            if line.strip().startswith(f'"from": {json.dumps(src, ensure_ascii=False)}'):
-                block = _block(lines, i)
-                if block:
-                    body = lines[block[0]:block[1] + 1]
-                    if any(l.strip().startswith(f'"to": {json.dumps(dst, ensure_ascii=False)}') for l in body) and \
-                            any(l.strip().startswith(f'"label": {json.dumps(label, ensure_ascii=False)}') for l in body):
-                        return block[0] + 1, block[1] + 1
+    decision:x, nfr:x, fr:x) in the model file as written with indent 2. A candidate block counts
+    only when its JSON is the item itself (not a sequence participant with the same id); None when
+    the item is not in the model or its block cannot be found in this layout."""
+    target = next((i.obj for i in iter_items(model) if i.ref == ref), None)
+    if target is None:
         return None
-    if kind in ("element", "snippet", "decision", "nfr", "fr"):
-        needle = f'"id": {json.dumps(key, ensure_ascii=False)}'
-        for i, line in enumerate(lines):
-            if line.strip().startswith(needle):
-                block = _block(lines, i)
-                return (block[0] + 1, block[1] + 1) if block else None
+    kind, _, key = ref.partition(":")
+    needle = (f'"from": {json.dumps(key.partition("->")[0], ensure_ascii=False)}' if kind == "relationship"
+              else f'"id": {json.dumps(key, ensure_ascii=False)}')
+    lines = text.splitlines()
+    want = _norm_obj(target)
+    for i, line in enumerate(lines):
+        if not line.strip().startswith(needle):
+            continue
+        block = _block(lines, i)
+        if not block:
+            continue
+        try:
+            found = json.loads("\n".join(lines[block[0]:block[1] + 1]).rstrip().rstrip(","))
+        except ValueError:
+            continue
+        if isinstance(found, dict) and _norm_obj(found) == want:
+            return block[0] + 1, block[1] + 1
     return None
 
 
@@ -257,7 +267,8 @@ def show(text: str, model: dict, refs: list[str]) -> list[dict]:
     for ref in refs:
         at = locate(text, model, ref)
         out.append({"item": ref, "at": f"L{at[0]}-L{at[1]}", "text": "\n".join(lines[at[0] - 1:at[1]])}
-                   if at else {"item": ref, "error": "not in the model"})
+                   if at else {"item": ref, "error": "in the model, but not locatable in this file's layout"
+                               if any(i.ref == ref for i in iter_items(model)) else "not in the model"})
     return out
 
 
@@ -298,7 +309,7 @@ def main(argv: list[str] | None = None) -> int:
         sp = sub.add_parser(name)
         sp.add_argument("model")
         if name == "show":
-            sp.add_argument("items", nargs="+", metavar="ITEM", help="e.g. element:cmp-x relationship:a->b:label")
+            sp.add_argument("items", nargs="+", metavar="ITEM", help="e.g. element:cmp-x 'relationship:a->b:label' (quote it: > is a redirect in PowerShell)")
         elif name == "pairs":
             sp.add_argument("--claims", required=True)
         else:

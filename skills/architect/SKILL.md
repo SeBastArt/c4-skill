@@ -511,7 +511,7 @@ Trigger: "prüfe das Modell", "ist das C4 noch aktuell", or as part of an OpenWi
    (or `c4_evidence.py show <model> <item> ...`, which quotes them exactly for a patch) instead of the whole file;
    `summary` keeps the full counts.
 2. For every listed entry: re-read the code at `current`, amend the item (Amend Mode rules). Then
-   `verify --fix-moved --accept-changed <item> ...` (e.g. `element:cmp-x`) re-stamps exactly the amended items in the
+   `verify --fix-moved --accept-changed <item> ...` (e.g. `element:cmp-x`; quote relationship refs, `'relationship:a->b:label'`, since `>` is a redirect) re-stamps exactly the amended items in the
    same call; they count as `accepted`, and exit 0 means nothing is left. A `gone` entry has no `current`: find the
    code again, set `resource` to its new lines, delete the entry's `version` and run `stamp` (a resource changed
    with the old version left in place stays `gone`). Add entries for new statements and `stamp` them.
